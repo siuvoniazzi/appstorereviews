@@ -1,0 +1,3035 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>App Store Review Explorer — iTunes RSS/JSON Viewer</title>
+  <meta name="description" content="Fetch, cache in IndexedDB, incrementally sync, analyze, and export Apple App Store customer reviews for any App ID." />
+  <meta property="og:title" content="App Store Review Explorer" />
+  <meta property="og:description" content="Track any Apple App Store app with local IndexedDB caching, incremental delta sync, weekly rating trends, and CSV/JSON/Markdown exports." />
+  <meta property="og:type" content="website" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23007380'/%3E%3Cpath d='M16 6.5l2.7 5.8 6.4.6-4.8 4.2 1.4 6.3L16 20.1l-5.7 3.3 1.4-6.3-4.8-4.2 6.4-.6L16 6.5z' fill='%23ffffff'/%3E%3C/svg%3E" />
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Inter & JetBrains Mono Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#f0f9fa',
+              100: '#d8f0f3',
+              200: '#b6e1e7',
+              500: '#008c99',
+              600: '#007380',
+              700: '#055d68',
+              800: '#0c4d56',
+              900: '#0f4149',
+            }
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    /* Custom subtle scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased selection:bg-brand-100 selection:text-brand-900 min-h-screen flex flex-col">
+
+  <!-- Toast Notification Banner -->
+  <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none max-w-sm w-full px-4 sm:px-0"></div>
+
+  <!-- Top Navigation Header -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <!-- App Icon -->
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 text-white flex items-center justify-center shadow-sm shrink-0">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+          </svg>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-base sm:text-lg font-bold tracking-tight text-slate-900">App Store Review Explorer</h1>
+            <span class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-brand-50 text-brand-700 border border-brand-200">
+              iTunes RSS API
+            </span>
+          </div>
+          <p class="text-xs text-slate-500 hidden sm:block">Track any Apple App Store app with local IndexedDB caching &amp; delta sync</p>
+        </div>
+      </div>
+
+      <!-- Header Utility Actions -->
+      <div class="flex items-center gap-2">
+        <button
+          id="btn-open-paste-modal"
+          type="button"
+          class="inline-flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 active:bg-slate-100 transition shadow-2xs cursor-pointer"
+          title="Paste raw JSON or XML response manually"
+        >
+          <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z" />
+          </svg>
+          <span class="hidden sm:inline">Paste Raw JSON/XML</span>
+          <span class="sm:hidden">Paste</span>
+        </button>
+
+        <button
+          id="btn-toggle-dart"
+          type="button"
+          class="inline-flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm font-medium text-brand-700 bg-brand-50 border border-brand-200 rounded-lg hover:bg-brand-100 transition cursor-pointer"
+          title="View Dart / Flutter integration snippet"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" />
+          </svg>
+          <span class="hidden sm:inline">Dart / Flutter Code</span>
+          <span class="sm:hidden">Dart</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Area -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+    <!-- Collapsible Dart / Flutter Code Drawer -->
+    <section id="dart-code-panel" class="hidden bg-slate-900 text-slate-100 rounded-2xl border border-slate-800 shadow-lg overflow-hidden">
+      <div class="px-5 py-3.5 bg-slate-800/80 border-b border-slate-700 flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <span class="w-2.5 h-2.5 rounded-full bg-teal-400"></span>
+          <h2 class="text-sm font-semibold text-white">Dart / Flutter iTunes RSS Client Snippet</h2>
+          <span class="text-xs text-slate-400 font-mono hidden md:inline">(synced with current App ID, Storefront &amp; Sort)</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button
+            id="btn-copy-dart"
+            type="button"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-brand-600 hover:bg-brand-500 text-white rounded-lg transition cursor-pointer"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
+            </svg>
+            <span>Copy Dart Code</span>
+          </button>
+          <button
+            id="btn-close-dart"
+            type="button"
+            class="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-700 transition cursor-pointer"
+            aria-label="Close Dart snippet"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="p-4 sm:p-5 overflow-x-auto">
+        <pre id="dart-code-content" class="text-xs sm:text-sm font-mono leading-relaxed text-slate-200"></pre>
+      </div>
+    </section>
+
+    <!-- API Query & Saved Apps Configuration Card -->
+    <section class="bg-white rounded-2xl border border-slate-200 shadow-2xs p-4 sm:p-6">
+      <!-- Dynamic Saved Apps Switcher (IndexedDB) -->
+      <div class="pb-4 mb-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center gap-2 flex-1 min-w-0" role="group" aria-label="Saved Apps">
+          <div class="flex items-center gap-1.5 mr-1 shrink-0">
+            <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Saved Apps</span>
+            <span id="saved-apps-count" class="text-[11px] font-mono font-semibold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600">0</span>
+          </div>
+          <div id="saved-apps-list" class="flex flex-wrap items-center gap-2"></div>
+          <button
+            id="btn-open-add-app"
+            type="button"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold border border-dashed border-brand-500/60 bg-brand-50/70 text-brand-700 hover:bg-brand-100 transition cursor-pointer"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+            <span>Add App</span>
+          </button>
+        </div>
+        <span class="text-xs text-slate-400 hidden md:inline shrink-0">Stored locally in IndexedDB • Click an app to sync new reviews</span>
+      </div>
+
+      <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 flex-1">
+          <!-- App ID Input -->
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <label for="input-app-id" class="block text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Apple App ID
+              </label>
+              <button
+                id="btn-quick-save-app"
+                type="button"
+                class="hidden text-[11px] font-semibold text-brand-700 hover:text-brand-800 hover:underline cursor-pointer"
+                title="Save this App ID to your Saved Apps list in IndexedDB"
+              >
+                + Save App
+              </button>
+            </div>
+            <div class="relative">
+              <input
+                id="input-app-id"
+                type="text"
+                value=""
+                placeholder="e.g. 389801252 or App Store URL"
+                class="w-full rounded-xl border border-slate-300 bg-slate-50/50 pl-3.5 pr-24 py-2.5 text-sm font-mono text-slate-900 focus:bg-white focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition"
+              />
+              <span id="app-id-badge" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] font-medium px-1.5 py-0.5 rounded bg-slate-200/70 text-slate-600 truncate max-w-[85px]">
+                No App
+              </span>
+            </div>
+          </div>
+
+          <!-- Country Storefront -->
+          <div>
+            <label for="select-country" class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+              Storefront
+            </label>
+            <select
+              id="select-country"
+              class="w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 focus:bg-white focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition"
+            >
+              <option value="us" selected>🇺🇸 United States (us)</option>
+              <option value="gb">🇬🇧 United Kingdom (gb)</option>
+              <option value="ch">🇨🇭 Switzerland (ch)</option>
+              <option value="de">🇩🇪 Germany (de)</option>
+              <option value="at">🇦🇹 Austria (at)</option>
+              <option value="fr">🇫🇷 France (fr)</option>
+              <option value="it">🇮🇹 Italy (it)</option>
+              <option value="es">🇪🇸 Spain (es)</option>
+              <option value="nl">🇳🇱 Netherlands (nl)</option>
+              <option value="ca">🇨🇦 Canada (ca)</option>
+              <option value="au">🇦🇺 Australia (au)</option>
+              <option value="jp">🇯🇵 Japan (jp)</option>
+              <option value="br">🇧🇷 Brazil (br)</option>
+              <option value="in">🇮🇳 India (in)</option>
+            </select>
+          </div>
+
+          <!-- Fetch Scope (Pagination Strategy) -->
+          <div>
+            <label for="select-fetch-scope" class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+              Fetch Scope
+            </label>
+            <select
+              id="select-fetch-scope"
+              class="w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3.5 py-2.5 text-sm font-medium text-slate-900 focus:bg-white focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition"
+            >
+              <option value="allPages" selected>All Pages (1–10, up to 500)</option>
+              <option value="deepPull">Deep Pull (Recent + Helpful)</option>
+              <option value="single">Single Page (Pick 1–10)</option>
+            </select>
+          </div>
+
+          <!-- Sort Order (Disabled when Deep Pull fetches both) -->
+          <div id="sort-control-wrapper">
+            <label for="select-sort" class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+              Feed Sort Order
+            </label>
+            <select
+              id="select-sort"
+              class="w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 focus:bg-white focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <option value="mostRecent" selected>Most Recent (mostRecent)</option>
+              <option value="mostHelpful">Most Helpful (mostHelpful)</option>
+            </select>
+          </div>
+
+          <!-- Page Selector (Shown only when Fetch Scope == Single Page) -->
+          <div id="single-page-wrapper" class="hidden">
+            <label for="select-page" class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+              Feed Page (1–10)
+            </label>
+            <select
+              id="select-page"
+              class="w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 focus:bg-white focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition"
+            >
+              <option value="1" selected>Page 1 (Latest 50)</option>
+              <option value="2">Page 2 (51–100)</option>
+              <option value="3">Page 3 (101–150)</option>
+              <option value="4">Page 4 (151–200)</option>
+              <option value="5">Page 5 (201–250)</option>
+              <option value="6">Page 6 (251–300)</option>
+              <option value="7">Page 7 (301–350)</option>
+              <option value="8">Page 8 (351–400)</option>
+              <option value="9">Page 9 (401–450)</option>
+              <option value="10">Page 10 (451–500)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Fetch & Cancel Buttons -->
+        <div class="flex items-center gap-2 shrink-0">
+          <button
+            id="btn-fetch"
+            type="button"
+            class="w-full lg:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 active:bg-brand-800 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold text-sm shadow-sm transition cursor-pointer"
+          >
+            <svg id="fetch-spinner" class="hidden animate-spin w-4 h-4 text-white" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <svg id="fetch-icon" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            <span id="fetch-btn-text">Fetch All Pages</span>
+          </button>
+
+          <button
+            id="btn-cancel-fetch"
+            type="button"
+            class="hidden inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-sm shadow-sm transition cursor-pointer"
+            title="Stop fetching remaining pages and keep reviews loaded so far"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+            <span>Stop</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Live Multi-Page Progress Bar -->
+      <div id="fetch-progress-wrapper" class="hidden mt-4 pt-4 border-t border-slate-100 space-y-2">
+        <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div class="flex items-center gap-2">
+            <span class="inline-block w-2 h-2 rounded-full bg-brand-500 animate-ping"></span>
+            <span id="fetch-progress-label" class="font-semibold text-slate-800">Preparing pagination queue...</span>
+          </div>
+          <span id="fetch-progress-stats" class="font-mono text-slate-600">0 / 10 requests • 0 unique reviews</span>
+        </div>
+        <div class="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+          <div
+            id="fetch-progress-bar"
+            class="h-full bg-gradient-to-r from-brand-500 to-emerald-500 rounded-full transition-all duration-300"
+            style="width: 0%"
+          ></div>
+        </div>
+      </div>
+
+      <!-- Endpoint Preview & CORS Proxy Settings Row -->
+      <div class="mt-4 pt-4 border-t border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="font-semibold text-slate-500 shrink-0">Endpoint:</span>
+          <a
+            id="endpoint-url-link"
+            href="#"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="font-mono text-brand-700 hover:underline truncate"
+          >
+            Enter an Apple App ID to preview endpoint
+          </a>
+          <button
+            id="btn-copy-url"
+            type="button"
+            class="p-1 text-slate-400 hover:text-slate-700 rounded transition shrink-0 cursor-pointer"
+            title="Copy endpoint URL"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- CORS Strategy Selector -->
+        <div class="flex flex-wrap items-center gap-3 shrink-0">
+          <label for="select-cors-mode" class="font-medium text-slate-600 flex items-center gap-1.5">
+            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418" />
+            </svg>
+            <span>Fetch Mode:</span>
+          </label>
+          <select
+            id="select-cors-mode"
+            class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700 focus:border-brand-500 outline-none"
+          >
+            <option value="auto" selected>Auto (Direct → CORS Proxy Fallback)</option>
+            <option value="direct">Direct iTunes API Only</option>
+            <option value="allorigins">Proxy: AllOrigins (api.allorigins.win)</option>
+            <option value="corsproxy">Proxy: CorsProxy.io</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <!-- Status / Error Alert Banner (Hidden by default) -->
+    <div id="status-banner" class="hidden rounded-2xl border p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div class="flex items-start gap-3">
+        <div id="status-icon" class="mt-0.5 shrink-0"></div>
+        <div>
+          <h3 id="status-title" class="text-sm font-semibold"></h3>
+          <p id="status-message" class="text-xs mt-0.5 leading-relaxed"></p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <button
+          id="btn-banner-paste"
+          type="button"
+          class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+        >
+          Paste Raw JSON/XML
+        </button>
+        <button
+          id="btn-banner-sample"
+          type="button"
+          class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-brand-600 text-white hover:bg-brand-700 transition cursor-pointer"
+        >
+          Load Demo Dataset
+        </button>
+      </div>
+    </div>
+
+    <!-- Summary Analytics Bar -->
+    <section id="analytics-section" class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      <!-- KPI Card 1: Total Loaded Reviews & Feed Meta -->
+      <div class="lg:col-span-3 bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Unique Reviews</span>
+            <span id="data-source-badge" class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 truncate max-w-[140px]">
+              Ready
+            </span>
+          </div>
+          <div class="mt-2 flex items-baseline gap-2">
+            <span id="stat-total-count" class="text-3xl font-bold tracking-tight text-slate-900">0</span>
+            <span id="stat-filtered-note" class="text-xs text-slate-500">entries</span>
+          </div>
+          <p id="stat-pagination-meta" class="text-[11px] text-slate-400 mt-1">0 pages fetched • 0 duplicates skipped</p>
+          <div class="mt-2 flex items-center justify-between gap-2 text-[11px]">
+            <span id="stat-cache-status" class="text-slate-500 font-medium truncate">IndexedDB: Ready</span>
+            <button
+              id="btn-clear-cache"
+              type="button"
+              class="text-slate-400 hover:text-rose-600 underline shrink-0 cursor-pointer"
+              title="Clear cached reviews for this App ID & Storefront and perform a full re-fetch"
+            >
+              Full Re-sync
+            </button>
+          </div>
+        </div>
+        <div class="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+          <span id="stat-app-title" class="font-medium text-slate-700 truncate">No App Selected</span>
+          <span id="stat-feed-updated" class="shrink-0">—</span>
+        </div>
+      </div>
+
+      <!-- KPI Card 2: Average Rating -->
+      <div class="lg:col-span-3 bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs flex flex-col justify-between">
+        <div>
+          <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Average Rating</span>
+          <div class="mt-2 flex items-center gap-3">
+            <span id="stat-avg-rating" class="text-3xl font-bold tracking-tight text-slate-900">0.00</span>
+            <div id="stat-avg-stars" class="flex items-center gap-0.5"></div>
+          </div>
+        </div>
+        <div class="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+          <span>Positive Sentiment</span>
+          <span id="stat-positive-share" class="font-semibold text-emerald-700">0% ≥ 4★</span>
+        </div>
+      </div>
+
+      <!-- KPI Card 3: Rating Distribution Bars -->
+      <div class="lg:col-span-6 bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs flex flex-col justify-between">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Rating Breakdown (Click bar to filter)</span>
+          <span class="text-[11px] text-slate-400">5★ to 1★</span>
+        </div>
+        <div id="rating-bars-container" class="space-y-1.5"></div>
+      </div>
+    </section>
+
+    <!-- Weekly Rating Average Over Time Chart -->
+    <section class="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h2 class="text-sm font-bold text-slate-900">Weekly Rating Average Over Time</h2>
+          <p class="text-xs text-slate-500">ISO calendar weeks (Mon–Sun) • Line shows mean star rating, bars show weekly review volume</p>
+        </div>
+        <div class="flex items-center gap-3 text-xs">
+          <span class="inline-flex items-center gap-1.5 text-slate-600">
+            <span class="w-2.5 h-2.5 rounded-full bg-brand-600"></span>
+            <span>Avg Rating (1★–5★)</span>
+          </span>
+          <span class="inline-flex items-center gap-1.5 text-slate-600">
+            <span class="w-2.5 h-2.5 rounded-xs bg-brand-100 border border-brand-200"></span>
+            <span>Review Volume</span>
+          </span>
+          <span id="weekly-chart-span" class="font-mono text-[11px] px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">0 weeks</span>
+        </div>
+      </div>
+      <div id="weekly-chart-container" class="w-full"></div>
+    </section>
+
+    <!-- Filter, Search & Export Toolbar -->
+    <section class="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs space-y-3">
+      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <!-- Search Input -->
+        <div class="relative flex-1">
+          <svg class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+          </svg>
+          <input
+            id="input-search"
+            type="text"
+            placeholder="Search reviews by keyword, author, or version..."
+            class="w-full rounded-xl border border-slate-300 bg-slate-50/50 pl-10 pr-9 py-2 text-sm text-slate-900 focus:bg-white focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition"
+          />
+          <button
+            id="btn-clear-search"
+            type="button"
+            class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded cursor-pointer"
+            aria-label="Clear search"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Client Sort & Version Filter -->
+        <div class="flex flex-wrap items-center gap-2">
+          <select
+            id="select-client-sort"
+            class="rounded-xl border border-slate-300 bg-slate-50/50 px-3 py-2 text-xs sm:text-sm text-slate-800 focus:border-brand-500 outline-none"
+          >
+            <option value="newest" selected>Sort: Newest First</option>
+            <option value="oldest">Sort: Oldest First</option>
+            <option value="highest">Sort: Highest Rated</option>
+            <option value="lowest">Sort: Lowest Rated</option>
+          </select>
+
+          <select
+            id="select-version"
+            class="rounded-xl border border-slate-300 bg-slate-50/50 px-3 py-2 text-xs sm:text-sm text-slate-800 focus:border-brand-500 outline-none"
+          >
+            <option value="all">All Versions (0)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Star Pills & Export Actions Row -->
+      <div class="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
+        <div id="star-filter-pills" class="flex flex-wrap items-center gap-1.5">
+          <button type="button" data-star="all" class="star-pill active px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-600 text-white transition cursor-pointer">All</button>
+          <button type="button" data-star="5" class="star-pill px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 transition cursor-pointer">5 ★</button>
+          <button type="button" data-star="4" class="star-pill px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 transition cursor-pointer">4 ★</button>
+          <button type="button" data-star="3" class="star-pill px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 transition cursor-pointer">3 ★</button>
+          <button type="button" data-star="2" class="star-pill px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 transition cursor-pointer">2 ★</button>
+          <button type="button" data-star="1" class="star-pill px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 transition cursor-pointer">1 ★</button>
+          <button id="btn-reset-filters" type="button" class="hidden ml-1 text-xs font-medium text-rose-600 hover:underline cursor-pointer">Reset filters</button>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <button
+            id="btn-export-md"
+            type="button"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 transition cursor-pointer"
+          >
+            <span>Copy Markdown</span>
+          </button>
+          <button
+            id="btn-export-csv"
+            type="button"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-xs font-semibold text-emerald-800 transition cursor-pointer"
+          >
+            <span>Export Excel CSV</span>
+          </button>
+          <button
+            id="btn-export-json"
+            type="button"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 transition cursor-pointer"
+          >
+            <span>Export JSON</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Reviews List Container -->
+    <section id="reviews-container" class="space-y-3"></section>
+
+    <!-- Client-Side Pagination Bar -->
+    <div id="load-more-bar" class="hidden bg-white rounded-2xl border border-slate-200 p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+      <span id="load-more-status" class="text-xs text-slate-500">Showing 50 reviews</span>
+      <div class="flex items-center gap-2">
+        <button
+          id="btn-load-more"
+          type="button"
+          class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-800 transition cursor-pointer"
+        >
+          Load 50 More
+        </button>
+        <button
+          id="btn-show-all"
+          type="button"
+          class="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-xs font-semibold text-white transition cursor-pointer"
+        >
+          Show All
+        </button>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="bg-white border-t border-slate-200 mt-12 py-5">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500">
+      <p>App Store Review Explorer • Generic Apple iTunes Customer Reviews RSS/JSON Viewer</p>
+      <p>Apps &amp; reviews stored locally in IndexedDB • Incremental delta sync, CORS fallback &amp; CSV/JSON/Markdown export</p>
+    </div>
+  </footer>
+
+  <!-- Modal: Add / Edit Saved App -->
+  <div id="app-modal" class="hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full overflow-hidden flex flex-col">
+      <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+        <div>
+          <h2 id="app-modal-title" class="text-base font-bold text-slate-900">Add App to Saved List</h2>
+          <p class="text-xs text-slate-500 mt-0.5">
+            Enter an Apple App ID or paste a full App Store link.
+          </p>
+        </div>
+        <button id="btn-close-app-modal" type="button" class="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 cursor-pointer">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <form id="app-modal-form" class="p-6 space-y-4">
+        <div>
+          <label for="modal-app-id" class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+            Apple App ID or App Store URL <span class="text-rose-500">*</span>
+          </label>
+          <input
+            id="modal-app-id"
+            type="text"
+            required
+            placeholder="e.g. 389801252 or https://apps.apple.com/us/app/.../id389801252"
+            class="w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3.5 py-2.5 text-sm font-mono text-slate-900 focus:bg-white focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition disabled:opacity-60 disabled:bg-slate-100"
+          />
+          <p id="modal-app-id-hint" class="text-[11px] text-slate-400 mt-1">
+            Find the numeric ID after <code class="font-mono text-slate-600">id</code> in any Apple App Store URL.
+          </p>
+        </div>
+
+        <div>
+          <label for="modal-app-name" class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+            Display Name <span class="font-normal text-slate-400 normal-case">(optional — auto-detected if empty)</span>
+          </label>
+          <input
+            id="modal-app-name"
+            type="text"
+            placeholder="e.g. My App"
+            class="w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 focus:bg-white focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition"
+          />
+        </div>
+
+        <div>
+          <label for="modal-app-country" class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+            Default Storefront
+          </label>
+          <select
+            id="modal-app-country"
+            class="w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 focus:bg-white focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition"
+          >
+            <option value="us">🇺🇸 United States (us)</option>
+            <option value="gb">🇬🇧 United Kingdom (gb)</option>
+            <option value="ch">🇨🇭 Switzerland (ch)</option>
+            <option value="de">🇩🇪 Germany (de)</option>
+            <option value="at">🇦🇹 Austria (at)</option>
+            <option value="fr">🇫🇷 France (fr)</option>
+            <option value="it">🇮🇹 Italy (it)</option>
+            <option value="es">🇪🇸 Spain (es)</option>
+            <option value="nl">🇳🇱 Netherlands (nl)</option>
+            <option value="ca">🇨🇦 Canada (ca)</option>
+            <option value="au">🇦🇺 Australia (au)</option>
+            <option value="jp">🇯🇵 Japan (jp)</option>
+            <option value="br">🇧🇷 Brazil (br)</option>
+            <option value="in">🇮🇳 India (in)</option>
+          </select>
+        </div>
+
+        <!-- Delete section (visible only when editing an existing saved app) -->
+        <div id="modal-delete-section" class="hidden pt-3 border-t border-slate-100 space-y-2.5">
+          <label class="inline-flex items-center gap-2 text-xs text-slate-600 cursor-pointer select-none">
+            <input
+              id="modal-delete-cache-checkbox"
+              type="checkbox"
+              checked
+              class="rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+            />
+            <span>Also delete cached reviews for this app from IndexedDB</span>
+          </label>
+          <div>
+            <button
+              id="btn-delete-saved-app"
+              type="button"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-xs font-semibold text-rose-700 transition cursor-pointer"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+              </svg>
+              <span>Remove App</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+          <button
+            id="btn-cancel-app-modal"
+            type="button"
+            class="px-4 py-2 rounded-xl border border-slate-300 bg-white text-xs sm:text-sm font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            id="btn-submit-app-modal"
+            type="submit"
+            class="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs sm:text-sm font-semibold shadow-2xs cursor-pointer"
+          >
+            Save &amp; Sync
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Paste Raw JSON / XML Feed -->
+  <div id="paste-modal" class="hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-2xl w-full overflow-hidden flex flex-col max-h-[90vh]">
+      <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+        <div>
+          <h2 class="text-base font-bold text-slate-900">Paste Raw Apple iTunes JSON or XML</h2>
+          <p class="text-xs text-slate-500 mt-0.5">
+            Open the endpoint URL in a new browser tab, copy all text, and paste it below.
+          </p>
+        </div>
+        <button id="btn-close-paste-modal" type="button" class="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 cursor-pointer">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="p-6 space-y-4 overflow-y-auto">
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+          <span class="text-slate-600">Need the raw feed? Open it directly in a new tab:</span>
+          <a
+            id="modal-direct-link"
+            href="#"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="inline-flex items-center gap-1 font-semibold text-brand-700 hover:underline shrink-0"
+          >
+            <span>Open iTunes Feed Tab</span>
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+            </svg>
+          </a>
+        </div>
+
+        <div>
+          <label for="textarea-raw-feed" class="block text-xs font-semibold text-slate-700 mb-1.5">
+            Raw JSON (<code class="font-mono text-brand-700">{"feed": {"entry": [...]}}</code>) or XML (<code class="font-mono text-brand-700">&lt;feed&gt;...&lt;/feed&gt;</code>)
+          </label>
+          <textarea
+            id="textarea-raw-feed"
+            rows="10"
+            placeholder='Paste the full JSON or XML response from itunes.apple.com here...'
+            class="w-full rounded-xl border border-slate-300 p-3 text-xs font-mono text-slate-800 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none"
+          ></textarea>
+        </div>
+      </div>
+
+      <div class="px-6 py-4 bg-slate-50 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+        <div class="flex flex-wrap items-center gap-3">
+          <button
+            id="btn-load-sample-from-modal"
+            type="button"
+            class="text-xs font-medium text-slate-600 hover:text-slate-900 underline cursor-pointer"
+          >
+            Load Demo Sample
+          </button>
+          <label class="inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 cursor-pointer select-none">
+            <input
+              id="checkbox-append-paste"
+              type="checkbox"
+              checked
+              class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+            />
+            <span>Append &amp; deduplicate with existing reviews</span>
+          </label>
+        </div>
+        <div class="flex items-center gap-2">
+          <button
+            id="btn-cancel-paste-modal"
+            type="button"
+            class="px-4 py-2 rounded-xl border border-slate-300 bg-white text-xs sm:text-sm font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            id="btn-parse-raw-feed"
+            type="button"
+            class="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs sm:text-sm font-semibold shadow-2xs cursor-pointer"
+          >
+            Parse &amp; Merge Reviews
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * App Store Review Explorer (Generic Edition)
+     * Manages user-defined Apple App Store apps in IndexedDB, incrementally syncs
+     * only new reviews via the public iTunes RSS/JSON feed API, and provides
+     * analytics, weekly rating trends, filtering, and CSV/JSON/Markdown exports.
+     */
+
+    // =========================================================================
+    // 1. Application State
+    // =========================================================================
+    const state = {
+      savedApps: [],    // [{ appId, name, defaultCountry, addedAt, lastOpenedAt }]
+      appId: '',
+      country: 'us',
+      fetchScope: 'allPages', // 'allPages' | 'deepPull' | 'single'
+      sortBy: 'mostRecent',
+      page: '1',
+      corsMode: 'auto', // 'auto' | 'direct' | 'allorigins' | 'corsproxy'
+      reviews: [],      // Deduplicated review objects
+      feedTitle: '',
+      feedUpdated: '',
+      sourceLabel: 'Ready',
+      pagesFetched: 0,
+      duplicatesSkipped: 0,
+      activeAbortController: null,
+      switchToken: 0,
+      visibleLimit: 50,
+      editingAppId: null, // null when adding a new app, or appId string when editing
+      filters: {
+        search: '',
+        star: 'all',
+        version: 'all',
+        clientSort: 'newest'
+      }
+    };
+
+    const LAST_APP_STORAGE_KEY = 'appstore_review_explorer_last_app_id';
+
+    // =========================================================================
+    // 2. DOM Element References
+    // =========================================================================
+    const els = {
+      toastContainer: document.getElementById('toast-container'),
+      savedAppsList: document.getElementById('saved-apps-list'),
+      savedAppsCount: document.getElementById('saved-apps-count'),
+      btnOpenAddApp: document.getElementById('btn-open-add-app'),
+      btnQuickSaveApp: document.getElementById('btn-quick-save-app'),
+      inputAppId: document.getElementById('input-app-id'),
+      appIdBadge: document.getElementById('app-id-badge'),
+      selectCountry: document.getElementById('select-country'),
+      selectFetchScope: document.getElementById('select-fetch-scope'),
+      selectSort: document.getElementById('select-sort'),
+      singlePageWrapper: document.getElementById('single-page-wrapper'),
+      selectPage: document.getElementById('select-page'),
+      selectCorsMode: document.getElementById('select-cors-mode'),
+      btnFetch: document.getElementById('btn-fetch'),
+      btnCancelFetch: document.getElementById('btn-cancel-fetch'),
+      fetchSpinner: document.getElementById('fetch-spinner'),
+      fetchIcon: document.getElementById('fetch-icon'),
+      fetchBtnText: document.getElementById('fetch-btn-text'),
+      fetchProgressWrapper: document.getElementById('fetch-progress-wrapper'),
+      fetchProgressLabel: document.getElementById('fetch-progress-label'),
+      fetchProgressStats: document.getElementById('fetch-progress-stats'),
+      fetchProgressBar: document.getElementById('fetch-progress-bar'),
+      endpointUrlLink: document.getElementById('endpoint-url-link'),
+      btnCopyUrl: document.getElementById('btn-copy-url'),
+      statusBanner: document.getElementById('status-banner'),
+      statusIcon: document.getElementById('status-icon'),
+      statusTitle: document.getElementById('status-title'),
+      statusMessage: document.getElementById('status-message'),
+      btnBannerPaste: document.getElementById('btn-banner-paste'),
+      btnBannerSample: document.getElementById('btn-banner-sample'),
+      dataSourceBadge: document.getElementById('data-source-badge'),
+      statTotalCount: document.getElementById('stat-total-count'),
+      statFilteredNote: document.getElementById('stat-filtered-note'),
+      statPaginationMeta: document.getElementById('stat-pagination-meta'),
+      statCacheStatus: document.getElementById('stat-cache-status'),
+      btnClearCache: document.getElementById('btn-clear-cache'),
+      statAppTitle: document.getElementById('stat-app-title'),
+      statFeedUpdated: document.getElementById('stat-feed-updated'),
+      statAvgRating: document.getElementById('stat-avg-rating'),
+      statAvgStars: document.getElementById('stat-avg-stars'),
+      statPositiveShare: document.getElementById('stat-positive-share'),
+      ratingBarsContainer: document.getElementById('rating-bars-container'),
+      weeklyChartContainer: document.getElementById('weekly-chart-container'),
+      weeklyChartSpan: document.getElementById('weekly-chart-span'),
+      inputSearch: document.getElementById('input-search'),
+      btnClearSearch: document.getElementById('btn-clear-search'),
+      selectClientSort: document.getElementById('select-client-sort'),
+      selectVersion: document.getElementById('select-version'),
+      starPills: document.querySelectorAll('.star-pill'),
+      btnResetFilters: document.getElementById('btn-reset-filters'),
+      btnExportMd: document.getElementById('btn-export-md'),
+      btnExportCsv: document.getElementById('btn-export-csv'),
+      btnExportJson: document.getElementById('btn-export-json'),
+      reviewsContainer: document.getElementById('reviews-container'),
+      loadMoreBar: document.getElementById('load-more-bar'),
+      loadMoreStatus: document.getElementById('load-more-status'),
+      btnLoadMore: document.getElementById('btn-load-more'),
+      btnShowAll: document.getElementById('btn-show-all'),
+      // Add / Edit App Modal
+      appModal: document.getElementById('app-modal'),
+      appModalTitle: document.getElementById('app-modal-title'),
+      appModalForm: document.getElementById('app-modal-form'),
+      modalAppId: document.getElementById('modal-app-id'),
+      modalAppIdHint: document.getElementById('modal-app-id-hint'),
+      modalAppName: document.getElementById('modal-app-name'),
+      modalAppCountry: document.getElementById('modal-app-country'),
+      modalDeleteSection: document.getElementById('modal-delete-section'),
+      modalDeleteCacheCheckbox: document.getElementById('modal-delete-cache-checkbox'),
+      btnDeleteSavedApp: document.getElementById('btn-delete-saved-app'),
+      btnCloseAppModal: document.getElementById('btn-close-app-modal'),
+      btnCancelAppModal: document.getElementById('btn-cancel-app-modal'),
+      btnSubmitAppModal: document.getElementById('btn-submit-app-modal'),
+      // Dart Drawer
+      dartPanel: document.getElementById('dart-code-panel'),
+      dartContent: document.getElementById('dart-code-content'),
+      btnToggleDart: document.getElementById('btn-toggle-dart'),
+      btnCloseDart: document.getElementById('btn-close-dart'),
+      btnCopyDart: document.getElementById('btn-copy-dart'),
+      // Paste Modal
+      pasteModal: document.getElementById('paste-modal'),
+      btnOpenPasteModal: document.getElementById('btn-open-paste-modal'),
+      btnClosePasteModal: document.getElementById('btn-close-paste-modal'),
+      btnCancelPasteModal: document.getElementById('btn-cancel-paste-modal'),
+      modalDirectLink: document.getElementById('modal-direct-link'),
+      textareaRawFeed: document.getElementById('textarea-raw-feed'),
+      checkboxAppendPaste: document.getElementById('checkbox-append-paste'),
+      btnLoadSampleFromModal: document.getElementById('btn-load-sample-from-modal'),
+      btnParseRawFeed: document.getElementById('btn-parse-raw-feed')
+    };
+
+    // =========================================================================
+    // 3. Local IndexedDB Persistence Layer (Saved Apps + Reviews + Feed Meta)
+    // =========================================================================
+    const DB_NAME = 'AppStoreReviewExplorerDB';
+    const DB_VERSION = 2;
+    const STORE_REVIEWS = 'reviews';
+    const STORE_META = 'feedMeta';
+    const STORE_APPS = 'savedApps';
+
+    function openReviewsDb() {
+      return new Promise((resolve, reject) => {
+        if (!window.indexedDB) {
+          reject(new Error('IndexedDB is not supported in this browser.'));
+          return;
+        }
+        const request = window.indexedDB.open(DB_NAME, DB_VERSION);
+        request.onupgradeneeded = (event) => {
+          const db = event.target.result;
+          if (!db.objectStoreNames.contains(STORE_REVIEWS)) {
+            const store = db.createObjectStore(STORE_REVIEWS, { keyPath: 'storageKey' });
+            store.createIndex('partitionKey', 'partitionKey', { unique: false });
+          }
+          if (!db.objectStoreNames.contains(STORE_META)) {
+            db.createObjectStore(STORE_META, { keyPath: 'partitionKey' });
+          }
+          if (!db.objectStoreNames.contains(STORE_APPS)) {
+            db.createObjectStore(STORE_APPS, { keyPath: 'appId' });
+          }
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error || new Error('Failed to open IndexedDB'));
+      });
+    }
+
+    function getPartitionKey(appId, country) {
+      return `${String(appId).trim()}_${String(country).trim().toLowerCase()}`;
+    }
+
+    // --- Saved Apps CRUD in IndexedDB ---
+    async function loadSavedAppsFromDb() {
+      try {
+        const db = await openReviewsDb();
+        return await new Promise((resolve) => {
+          const tx = db.transaction([STORE_APPS], 'readonly');
+          const req = tx.objectStore(STORE_APPS).getAll();
+          tx.oncomplete = () => {
+            const apps = (req.result || []).sort((a, b) =>
+              String(a.addedAt || '').localeCompare(String(b.addedAt || ''))
+            );
+            resolve(apps);
+          };
+          tx.onerror = () => resolve([]);
+        });
+      } catch (_) {
+        return [];
+      }
+    }
+
+    async function saveAppToDb(appRecord) {
+      try {
+        const db = await openReviewsDb();
+        return await new Promise((resolve) => {
+          const tx = db.transaction([STORE_APPS], 'readwrite');
+          tx.objectStore(STORE_APPS).put(appRecord);
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => resolve(false);
+        });
+      } catch (_) {
+        return false;
+      }
+    }
+
+    async function deleteSavedAppFromDb(appId, alsoDeleteCache = false) {
+      try {
+        const db = await openReviewsDb();
+        return await new Promise((resolve) => {
+          const stores = alsoDeleteCache ? [STORE_APPS, STORE_REVIEWS, STORE_META] : [STORE_APPS];
+          const tx = db.transaction(stores, 'readwrite');
+          tx.objectStore(STORE_APPS).delete(String(appId));
+
+          if (alsoDeleteCache) {
+            const prefix = `${String(appId).trim()}_`;
+            const reviewStore = tx.objectStore(STORE_REVIEWS);
+            const metaStore = tx.objectStore(STORE_META);
+
+            const reviewCursorReq = reviewStore.openCursor();
+            reviewCursorReq.onsuccess = (event) => {
+              const cursor = event.target.result;
+              if (cursor) {
+                if (String(cursor.value?.partitionKey || '').startsWith(prefix)) {
+                  cursor.delete();
+                }
+                cursor.continue();
+              }
+            };
+
+            const metaCursorReq = metaStore.openCursor();
+            metaCursorReq.onsuccess = (event) => {
+              const cursor = event.target.result;
+              if (cursor) {
+                if (String(cursor.key || '').startsWith(prefix)) {
+                  cursor.delete();
+                }
+                cursor.continue();
+              }
+            };
+          }
+
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => resolve(false);
+        });
+      } catch (_) {
+        return false;
+      }
+    }
+
+    // --- Reviews & Meta CRUD in IndexedDB ---
+    async function loadCachedReviewsFromDb(appId, country) {
+      const partitionKey = getPartitionKey(appId, country);
+      try {
+        const db = await openReviewsDb();
+        return await new Promise((resolve) => {
+          const tx = db.transaction([STORE_REVIEWS, STORE_META], 'readonly');
+          const reviewStore = tx.objectStore(STORE_REVIEWS);
+          const metaStore = tx.objectStore(STORE_META);
+          const index = reviewStore.index('partitionKey');
+
+          const reviewsReq = index.getAll(IDBKeyRange.only(partitionKey));
+          const metaReq = metaStore.get(partitionKey);
+
+          tx.oncomplete = () => {
+            const rawRecords = reviewsReq.result || [];
+            const reviews = rawRecords.map(({ storageKey, partitionKey: _pk, ...review }) => review);
+            resolve({ reviews, meta: metaReq.result || null });
+          };
+          tx.onerror = () => resolve({ reviews: [], meta: null });
+        });
+      } catch (_) {
+        return { reviews: [], meta: null };
+      }
+    }
+
+    async function saveReviewsToDb(appId, country, reviews, metaPatch = {}) {
+      const partitionKey = getPartitionKey(appId, country);
+      try {
+        const db = await openReviewsDb();
+        return await new Promise((resolve) => {
+          const tx = db.transaction([STORE_REVIEWS, STORE_META], 'readwrite');
+          const reviewStore = tx.objectStore(STORE_REVIEWS);
+          const metaStore = tx.objectStore(STORE_META);
+
+          for (const review of reviews) {
+            if (!review || !review.id) continue;
+            reviewStore.put({
+              ...review,
+              partitionKey,
+              storageKey: `${partitionKey}::${review.id}`
+            });
+          }
+
+          metaStore.put({
+            partitionKey,
+            appId: String(appId),
+            country: String(country).toLowerCase(),
+            feedTitle: metaPatch.feedTitle || '',
+            feedUpdated: metaPatch.feedUpdated || '',
+            lastSyncedAt: new Date().toISOString(),
+            totalCount: reviews.length
+          });
+
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => resolve(false);
+        });
+      } catch (_) {
+        return false;
+      }
+    }
+
+    async function clearCachedPartitionFromDb(appId, country) {
+      const partitionKey = getPartitionKey(appId, country);
+      try {
+        const db = await openReviewsDb();
+        return await new Promise((resolve) => {
+          const tx = db.transaction([STORE_REVIEWS, STORE_META], 'readwrite');
+          const reviewStore = tx.objectStore(STORE_REVIEWS);
+          const metaStore = tx.objectStore(STORE_META);
+          const index = reviewStore.index('partitionKey');
+          const cursorReq = index.openKeyCursor(IDBKeyRange.only(partitionKey));
+
+          cursorReq.onsuccess = (event) => {
+            const cursor = event.target.result;
+            if (cursor) {
+              reviewStore.delete(cursor.primaryKey);
+              cursor.continue();
+            }
+          };
+          metaStore.delete(partitionKey);
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => resolve(false);
+        });
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function updateCacheStatusBadge(count, lastSyncedIso = '') {
+      if (!els.statCacheStatus) return;
+      if (!state.appId) {
+        els.statCacheStatus.textContent = 'IndexedDB: Ready';
+        els.statCacheStatus.className = 'text-slate-500 font-medium truncate';
+        return;
+      }
+      if (count > 0) {
+        const timeStr = lastSyncedIso
+          ? new Date(lastSyncedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          : 'saved';
+        els.statCacheStatus.textContent = `IndexedDB: ${count} cached (${timeStr})`;
+        els.statCacheStatus.className = 'text-emerald-700 font-medium truncate';
+      } else {
+        els.statCacheStatus.textContent = 'IndexedDB: Empty';
+        els.statCacheStatus.className = 'text-slate-500 font-medium truncate';
+      }
+    }
+
+    // =========================================================================
+    // 4. Generic Demo Dataset (Used only when user explicitly clicks Load Demo)
+    // =========================================================================
+    const DEMO_DATASET = {
+      title: 'Demo App',
+      updated: '2026-10-15T10:00:00Z',
+      reviews: [
+        {
+          id: 'demo-rev-1',
+          author: 'Alex_M',
+          rating: 5,
+          version: '2.4.0',
+          title: 'Fast, clean, and reliable',
+          content: 'The latest update made syncing instantaneous and the interface feels super responsive.',
+          updated: '2026-10-12T14:22:00Z',
+          voteSum: 11,
+          voteCount: 12
+        },
+        {
+          id: 'demo-rev-2',
+          author: 'Samira_K',
+          rating: 4,
+          version: '2.3.1',
+          title: 'Great overall, one small request',
+          content: 'Love the workflow and dark mode. Would be nice to have custom notification schedules in a future release.',
+          updated: '2026-09-28T09:40:00Z',
+          voteSum: 5,
+          voteCount: 6
+        },
+        {
+          id: 'demo-rev-3',
+          author: 'Jordan99',
+          rating: 2,
+          version: '2.3.0',
+          title: 'Occasional crash on export',
+          content: 'Exporting large reports sometimes closes the app on iOS 18. Hoping this gets patched soon.',
+          updated: '2026-09-14T18:05:00Z',
+          voteSum: 8,
+          voteCount: 10
+        }
+      ]
+    };
+
+    // =========================================================================
+    // 5. App ID Parsing, iTunes Lookup & Saved Apps UI Helpers
+    // =========================================================================
+    function parseAppInput(rawValue) {
+      const raw = String(rawValue || '').trim();
+      if (!raw) return { appId: '', country: '' };
+
+      // Full Apple App Store URL: https://apps.apple.com/us/app/app-name/id389801252
+      const urlCountryMatch = raw.match(/apps\.apple\.com\/([a-z]{2})\//i);
+      const urlIdMatch = raw.match(/\/id(\d{5,15})/i);
+      if (urlIdMatch) {
+        return {
+          appId: urlIdMatch[1],
+          country: urlCountryMatch ? urlCountryMatch[1].toLowerCase() : ''
+        };
+      }
+
+      // Prefixed or raw numeric ID: id389801252 or 389801252
+      const cleaned = raw.replace(/^id/i, '').trim();
+      if (/^\d{5,15}$/.test(cleaned)) {
+        return { appId: cleaned, country: '' };
+      }
+
+      // Fallback: extract any long digit sequence
+      const digitsMatch = raw.match(/(\d{5,15})/);
+      if (digitsMatch) {
+        return { appId: digitsMatch[1], country: urlCountryMatch ? urlCountryMatch[1].toLowerCase() : '' };
+      }
+
+      return { appId: '', country: '' };
+    }
+
+    function getSavedAppById(appId) {
+      return state.savedApps.find((a) => a.appId === String(appId)) || null;
+    }
+
+    async function lookupAppNameFromItunes(appId, country) {
+      const lookupUrl = `https://itunes.apple.com/lookup?id=${encodeURIComponent(appId)}&country=${encodeURIComponent(country || 'us')}`;
+      const tryUrls = [
+        { url: lookupUrl, unwrap: false },
+        { url: `https://api.allorigins.win/get?url=${encodeURIComponent(lookupUrl)}`, unwrap: true }
+      ];
+      for (const attempt of tryUrls) {
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 3500);
+          const res = await fetch(attempt.url, { signal: controller.signal });
+          clearTimeout(timer);
+          if (!res.ok) continue;
+          const payload = await res.json();
+          const parsed = attempt.unwrap ? JSON.parse(payload.contents || '{}') : payload;
+          const trackName = parsed?.results?.[0]?.trackName;
+          if (trackName) return String(trackName).trim();
+        } catch (_) {
+          // Ignore lookup failures and fall back gracefully
+        }
+      }
+      return '';
+    }
+
+    function renderSavedAppsBar() {
+      els.savedAppsCount.textContent = String(state.savedApps.length);
+
+      if (state.savedApps.length === 0) {
+        els.savedAppsList.innerHTML = `
+          <span class="text-xs text-slate-400 italic">No apps saved yet</span>
+        `;
+        syncAppInputBadge();
+        return;
+      }
+
+      const currentId = parseAppInput(els.inputAppId.value).appId || state.appId;
+
+      els.savedAppsList.innerHTML = state.savedApps
+        .map((app) => {
+          const isSelected = app.appId === currentId;
+          const pillCls = isSelected
+            ? 'bg-brand-600 text-white shadow-2xs'
+            : 'bg-slate-100 text-slate-700 hover:bg-slate-200';
+          const codeCls = isSelected
+            ? 'bg-white/20 text-white'
+            : 'bg-slate-200/80 text-slate-600';
+          const editBtnCls = isSelected
+            ? 'text-white/80 hover:text-white hover:bg-white/20'
+            : 'text-slate-400 hover:text-slate-700 hover:bg-slate-300/60';
+
+          return `
+            <div class="inline-flex items-center rounded-xl transition ${pillCls}">
+              <button
+                type="button"
+                data-select-app-id="${escapeHtml(app.appId)}"
+                class="saved-app-select-btn inline-flex items-center gap-2 pl-3 pr-2 py-1.5 text-xs sm:text-sm font-semibold cursor-pointer"
+                title="Switch to ${escapeHtml(app.name)} (${escapeHtml(app.appId)})"
+              >
+                <span class="max-w-[160px] truncate">${escapeHtml(app.name)}</span>
+                <span class="font-mono text-[11px] px-1.5 py-0.5 rounded ${codeCls}">${escapeHtml(app.appId)}</span>
+              </button>
+              <button
+                type="button"
+                data-edit-app-id="${escapeHtml(app.appId)}"
+                class="saved-app-edit-btn p-1.5 mr-1 rounded-lg transition cursor-pointer ${editBtnCls}"
+                title="Edit or remove ${escapeHtml(app.name)}"
+                aria-label="Edit ${escapeHtml(app.name)}"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
+                </svg>
+              </button>
+            </div>
+          `;
+        })
+        .join('');
+
+      els.savedAppsList.querySelectorAll('.saved-app-select-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const id = btn.dataset.selectAppId;
+          const app = getSavedAppById(id);
+          if (!app) return;
+          selectSavedApp(app);
+        });
+      });
+
+      els.savedAppsList.querySelectorAll('.saved-app-edit-btn').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const id = btn.dataset.editAppId;
+          const app = getSavedAppById(id);
+          if (!app) return;
+          openAppModal(app);
+        });
+      });
+
+      syncAppInputBadge();
+    }
+
+    function syncAppInputBadge() {
+      const { appId } = parseAppInput(els.inputAppId.value);
+      const saved = appId ? getSavedAppById(appId) : null;
+
+      if (!appId) {
+        els.appIdBadge.textContent = 'No App';
+        els.btnQuickSaveApp.classList.add('hidden');
+      } else if (saved) {
+        els.appIdBadge.textContent = saved.name;
+        els.btnQuickSaveApp.classList.add('hidden');
+      } else {
+        els.appIdBadge.textContent = 'Unsaved';
+        els.btnQuickSaveApp.classList.remove('hidden');
+      }
+    }
+
+    async function selectSavedApp(app) {
+      els.inputAppId.value = app.appId;
+      state.appId = app.appId;
+      if (app.defaultCountry && els.selectCountry.querySelector(`option[value="${app.defaultCountry}"]`)) {
+        els.selectCountry.value = app.defaultCountry;
+        state.country = app.defaultCountry;
+      }
+      try {
+        localStorage.setItem(LAST_APP_STORAGE_KEY, app.appId);
+      } catch (_) {}
+
+      app.lastOpenedAt = new Date().toISOString();
+      await saveAppToDb(app);
+      renderSavedAppsBar();
+      hydrateFromIndexedDbAndSync();
+    }
+
+    function openAppModal(existingApp = null, prefillId = '', prefillCountry = '') {
+      state.editingAppId = existingApp ? existingApp.appId : null;
+
+      if (existingApp) {
+        els.appModalTitle.textContent = 'Edit Saved App';
+        els.modalAppId.value = existingApp.appId;
+        els.modalAppId.disabled = true;
+        els.modalAppIdHint.textContent = 'App ID cannot be changed after saving. Remove and re-add if needed.';
+        els.modalAppName.value = existingApp.name || '';
+        els.modalAppCountry.value = existingApp.defaultCountry || state.country || 'us';
+        els.modalDeleteSection.classList.remove('hidden');
+        els.modalDeleteCacheCheckbox.checked = true;
+        els.btnSubmitAppModal.textContent = 'Save Changes';
+      } else {
+        els.appModalTitle.textContent = 'Add App to Saved List';
+        els.modalAppId.value = prefillId || '';
+        els.modalAppId.disabled = false;
+        els.modalAppIdHint.textContent = 'Find the numeric ID after "id" in any Apple App Store URL.';
+        els.modalAppName.value = '';
+        els.modalAppCountry.value = prefillCountry || els.selectCountry.value || 'us';
+        els.modalDeleteSection.classList.add('hidden');
+        els.btnSubmitAppModal.textContent = 'Save & Sync';
+      }
+
+      els.appModal.classList.remove('hidden');
+      setTimeout(() => {
+        if (existingApp) {
+          els.modalAppName.focus();
+        } else {
+          els.modalAppId.focus();
+        }
+      }, 30);
+    }
+
+    function closeAppModal() {
+      els.appModal.classList.add('hidden');
+      state.editingAppId = null;
+    }
+
+    // =========================================================================
+    // 6. URL & UI Synchronization Helpers
+    // =========================================================================
+    function buildAppleFeedUrl(page = state.page, sortBy = state.sortBy) {
+      const cleanId = parseAppInput(els.inputAppId.value || state.appId).appId;
+      const country = (els.selectCountry.value || state.country || 'us').trim().toLowerCase();
+      if (!cleanId) return '';
+      return `https://itunes.apple.com/${country}/rss/customerreviews/page=${page}/id=${cleanId}/sortBy=${sortBy}/json`;
+    }
+
+    function syncScopeControls() {
+      const scope = els.selectFetchScope.value;
+      state.fetchScope = scope;
+      if (scope === 'single') {
+        els.singlePageWrapper.classList.remove('hidden');
+        els.selectSort.disabled = false;
+        els.fetchBtnText.textContent = `Fetch Page ${els.selectPage.value}`;
+      } else if (scope === 'deepPull') {
+        els.singlePageWrapper.classList.add('hidden');
+        els.selectSort.disabled = true;
+        els.fetchBtnText.textContent = 'Deep Pull (Up to 1,000)';
+      } else {
+        els.singlePageWrapper.classList.add('hidden');
+        els.selectSort.disabled = false;
+        els.fetchBtnText.textContent = 'Fetch All Pages';
+      }
+      updateEndpointDisplay();
+    }
+
+    function updateEndpointDisplay() {
+      const previewPage = state.fetchScope === 'single' ? els.selectPage.value : '1';
+      const previewSort = els.selectSort.value;
+      const url = buildAppleFeedUrl(previewPage, previewSort);
+      if (els.endpointUrlLink) {
+        if (url) {
+          els.endpointUrlLink.href = url;
+          els.endpointUrlLink.textContent = url;
+          els.endpointUrlLink.classList.remove('pointer-events-none', 'text-slate-400');
+          els.endpointUrlLink.classList.add('text-brand-700');
+        } else {
+          els.endpointUrlLink.href = '#';
+          els.endpointUrlLink.textContent = 'Add or enter an Apple App ID to preview the iTunes RSS endpoint';
+          els.endpointUrlLink.classList.add('pointer-events-none', 'text-slate-400');
+          els.endpointUrlLink.classList.remove('text-brand-700');
+        }
+      }
+      if (els.modalDirectLink) {
+        els.modalDirectLink.href = url || 'https://itunes.apple.com/';
+      }
+      updateDartSnippet();
+    }
+
+    function setFetchLoading(isLoading) {
+      els.btnFetch.disabled = isLoading;
+      if (isLoading) {
+        els.fetchSpinner.classList.remove('hidden');
+        els.fetchIcon.classList.add('hidden');
+        els.btnCancelFetch.classList.remove('hidden');
+        els.fetchProgressWrapper.classList.remove('hidden');
+      } else {
+        els.fetchSpinner.classList.add('hidden');
+        els.fetchIcon.classList.remove('hidden');
+        els.btnCancelFetch.classList.add('hidden');
+        els.fetchProgressWrapper.classList.add('hidden');
+      }
+    }
+
+    function updateProgressUI(completed, total, label, uniqueCount) {
+      const pct = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0;
+      els.fetchProgressLabel.textContent = label;
+      els.fetchProgressStats.textContent = `${completed} / ${total} requests • ${uniqueCount} unique reviews`;
+      els.fetchProgressBar.style.width = `${pct}%`;
+    }
+
+    function showToast(message, type = 'info') {
+      const colors = {
+        success: 'bg-emerald-900 text-white border-emerald-700',
+        error: 'bg-rose-900 text-white border-rose-700',
+        info: 'bg-slate-900 text-white border-slate-700'
+      };
+      const toast = document.createElement('div');
+      toast.className = `pointer-events-auto rounded-xl border px-4 py-3 text-xs font-medium shadow-lg transition-all duration-300 ${colors[type] || colors.info}`;
+      toast.textContent = message;
+      els.toastContainer.appendChild(toast);
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-1');
+        setTimeout(() => toast.remove(), 300);
+      }, 3600);
+    }
+
+    function showStatusBanner(type, title, message) {
+      const styles = {
+        warning: 'bg-amber-50 border-amber-200 text-amber-900',
+        info: 'bg-sky-50 border-sky-200 text-sky-900',
+        error: 'bg-rose-50 border-rose-200 text-rose-900'
+      };
+      els.statusBanner.className = `rounded-2xl border p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${styles[type] || styles.info}`;
+      els.statusTitle.textContent = title;
+      els.statusMessage.textContent = message;
+      els.statusBanner.classList.remove('hidden');
+    }
+
+    function hideStatusBanner() {
+      els.statusBanner.classList.add('hidden');
+    }
+
+    function escapeHtml(str) {
+      return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    // =========================================================================
+    // 7. Feed Parsers (Apple JSON & XML Formats)
+    // =========================================================================
+    function parseRawFeedText(rawText) {
+      const trimmed = (rawText || '').trim();
+      if (!trimmed) {
+        throw new Error('Empty response body received.');
+      }
+      if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        return parseItunesJson(JSON.parse(trimmed));
+      }
+      if (trimmed.startsWith('<')) {
+        return parseItunesXml(trimmed);
+      }
+      throw new Error('Unrecognized response format (expected JSON or XML).');
+    }
+
+    function parseItunesJson(data) {
+      const feed = data?.feed || {};
+      let feedTitle = feed?.title?.label || '';
+      const feedUpdated = feed?.updated?.label || '';
+      let entries = feed?.entry || [];
+      if (!Array.isArray(entries)) {
+        entries = entries ? [entries] : [];
+      }
+
+      let detectedAppName = '';
+      const reviews = [];
+      for (const entry of entries) {
+        // First entry in Apple RSS JSON is often app metadata without im:rating
+        if (!entry || !entry['im:rating']) {
+          if (!detectedAppName && entry?.['im:name']?.label) {
+            detectedAppName = String(entry['im:name'].label).trim();
+          }
+          continue;
+        }
+
+        reviews.push({
+          id: String(entry?.id?.label || crypto.randomUUID()),
+          author: String(entry?.author?.name?.label || 'Anonymous'),
+          rating: Math.max(1, Math.min(5, parseInt(entry?.['im:rating']?.label || '0', 10) || 0)),
+          version: String(entry?.['im:version']?.label || '—'),
+          title: String(entry?.title?.label || '(No Title)'),
+          content: String(entry?.content?.label || ''),
+          updated: String(entry?.updated?.label || ''),
+          voteSum: parseInt(entry?.['im:voteSum']?.label || '0', 10) || 0,
+          voteCount: parseInt(entry?.['im:voteCount']?.label || '0', 10) || 0
+        });
+      }
+
+      if (detectedAppName) {
+        feedTitle = detectedAppName;
+      }
+
+      return { reviews, feedTitle, feedUpdated, detectedAppName };
+    }
+
+    function parseItunesXml(xmlText) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(xmlText, 'application/xml');
+      const parserError = doc.querySelector('parsererror');
+      if (parserError) {
+        throw new Error('Invalid XML feed structure.');
+      }
+
+      let feedTitle = doc.querySelector('feed > title')?.textContent?.trim() || '';
+      const feedUpdated = doc.querySelector('feed > updated')?.textContent?.trim() || '';
+      const entryNodes = Array.from(doc.querySelectorAll('feed > entry'));
+
+      let detectedAppName = '';
+      const reviews = [];
+      for (const node of entryNodes) {
+        const ratingNode = node.getElementsByTagName('im:rating')[0];
+        if (!ratingNode) {
+          if (!detectedAppName) {
+            const nameNode = node.getElementsByTagName('im:name')[0];
+            if (nameNode?.textContent?.trim()) {
+              detectedAppName = nameNode.textContent.trim();
+            }
+          }
+          continue;
+        }
+
+        const id = node.querySelector('id')?.textContent?.trim() || crypto.randomUUID();
+        const author = node.querySelector('author > name')?.textContent?.trim() || 'Anonymous';
+        const rating = Math.max(1, Math.min(5, parseInt(ratingNode.textContent || '0', 10) || 0));
+        const version = node.getElementsByTagName('im:version')[0]?.textContent?.trim() || '—';
+        const title = node.querySelector('title')?.textContent?.trim() || '(No Title)';
+        const content = node.querySelector('content')?.textContent?.trim() || '';
+        const updated = node.querySelector('updated')?.textContent?.trim() || '';
+        const voteSum = parseInt(node.getElementsByTagName('im:voteSum')[0]?.textContent || '0', 10) || 0;
+        const voteCount = parseInt(node.getElementsByTagName('im:voteCount')[0]?.textContent || '0', 10) || 0;
+
+        reviews.push({ id, author, rating, version, title, content, updated, voteSum, voteCount });
+      }
+
+      if (detectedAppName) {
+        feedTitle = detectedAppName;
+      }
+
+      return { reviews, feedTitle, feedUpdated, detectedAppName };
+    }
+
+    // =========================================================================
+    // 8. Single-Page Network Fetcher with CORS Fallbacks
+    // =========================================================================
+    async function fetchSingleFeedPage(targetUrl, corsMode, signal) {
+      const strategies = [];
+
+      if (corsMode === 'direct') {
+        strategies.push({
+          label: 'Direct API',
+          fetchFn: async () => {
+            const res = await fetch(targetUrl, { signal });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return await res.text();
+          }
+        });
+      } else if (corsMode === 'allorigins') {
+        strategies.push({
+          label: 'AllOrigins Proxy',
+          fetchFn: async () => {
+            const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+            const res = await fetch(proxyUrl, { signal });
+            if (!res.ok) throw new Error(`Proxy HTTP ${res.status}`);
+            const json = await res.json();
+            if (!json.contents) throw new Error('Empty proxy response');
+            return json.contents;
+          }
+        });
+      } else if (corsMode === 'corsproxy') {
+        strategies.push({
+          label: 'CorsProxy.io',
+          fetchFn: async () => {
+            const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+            const res = await fetch(proxyUrl, { signal });
+            if (!res.ok) throw new Error(`Proxy HTTP ${res.status}`);
+            return await res.text();
+          }
+        });
+      } else {
+        // Auto: Direct -> AllOrigins -> CorsProxy.io
+        strategies.push(
+          {
+            label: 'Direct API',
+            fetchFn: async () => {
+              const res = await fetch(targetUrl, { signal });
+              if (!res.ok) throw new Error(`HTTP ${res.status}`);
+              return await res.text();
+            }
+          },
+          {
+            label: 'AllOrigins Proxy',
+            fetchFn: async () => {
+              const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+              const res = await fetch(proxyUrl, { signal });
+              if (!res.ok) throw new Error(`Proxy HTTP ${res.status}`);
+              const json = await res.json();
+              if (!json.contents) throw new Error('Empty proxy response');
+              return json.contents;
+            }
+          },
+          {
+            label: 'CorsProxy.io',
+            fetchFn: async () => {
+              const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+              const res = await fetch(proxyUrl, { signal });
+              if (!res.ok) throw new Error(`Proxy HTTP ${res.status}`);
+              return await res.text();
+            }
+          }
+        );
+      }
+
+      let lastErr = new Error('Network request failed');
+      for (const strategy of strategies) {
+        if (signal?.aborted) {
+          throw new DOMException('Aborted', 'AbortError');
+        }
+        try {
+          const rawText = await strategy.fetchFn();
+          const parsed = parseRawFeedText(rawText);
+          return { parsed, strategyLabel: strategy.label };
+        } catch (err) {
+          if (err.name === 'AbortError') throw err;
+          lastErr = err;
+          // If Apple explicitly responded with 400 (page depth > 10), do not retry via proxies
+          if (String(err.message).includes('400')) throw err;
+        }
+      }
+      throw lastErr;
+    }
+
+    // =========================================================================
+    // 9. Paginated Delta Sync Fetcher
+    // =========================================================================
+    async function fetchReviewsFromApi() {
+      const parsedInput = parseAppInput(els.inputAppId.value);
+      const cleanId = parsedInput.appId;
+      if (!cleanId) {
+        showToast('Please enter a valid numeric Apple App ID or App Store URL.', 'error');
+        return;
+      }
+
+      els.inputAppId.value = cleanId;
+      if (parsedInput.country && els.selectCountry.querySelector(`option[value="${parsedInput.country}"]`)) {
+        els.selectCountry.value = parsedInput.country;
+      }
+
+      state.appId = cleanId;
+      state.country = els.selectCountry.value;
+      state.fetchScope = els.selectFetchScope.value;
+      state.sortBy = els.selectSort.value;
+      state.page = els.selectPage.value;
+      state.corsMode = els.selectCorsMode.value;
+      syncAppInputBadge();
+      updateEndpointDisplay();
+
+      if (state.activeAbortController) {
+        state.activeAbortController.abort();
+      }
+      const controller = new AbortController();
+      state.activeAbortController = controller;
+      const requestToken = ++state.switchToken;
+
+      hideStatusBanner();
+      setFetchLoading(true);
+
+      const tasks = [];
+      if (state.fetchScope === 'single') {
+        tasks.push({ page: Number(state.page), sortBy: state.sortBy });
+      } else if (state.fetchScope === 'deepPull') {
+        for (const sortOrder of ['mostRecent', 'mostHelpful']) {
+          for (let p = 1; p <= 10; p++) {
+            tasks.push({ page: p, sortBy: sortOrder });
+          }
+        }
+      } else {
+        for (let p = 1; p <= 10; p++) {
+          tasks.push({ page: p, sortBy: state.sortBy });
+        }
+      }
+
+      const uniqueMap = new Map();
+      const cached = await loadCachedReviewsFromDb(cleanId, state.country);
+      if (controller.signal.aborted || requestToken !== state.switchToken) return;
+
+      const cachedIds = new Set();
+      for (const r of cached.reviews) {
+        uniqueMap.set(r.id, r);
+        cachedIds.add(r.id);
+      }
+
+      const savedApp = getSavedAppById(cleanId);
+      let feedTitle = savedApp?.name || cached.meta?.feedTitle || state.feedTitle || `App ${cleanId}`;
+      let feedUpdated = cached.meta?.feedUpdated || state.feedUpdated;
+      let pagesFetched = 0;
+      let duplicatesSkipped = 0;
+      let newlyAddedCount = 0;
+      let lastStrategyLabel = 'Live API';
+      let encounteredError = null;
+      let skipSort = null;
+      const isIncrementalSync = cachedIds.size > 0;
+
+      updateProgressUI(
+        0,
+        tasks.length,
+        isIncrementalSync
+          ? `Checking for new reviews (${cachedIds.size} cached in IndexedDB)...`
+          : 'Starting full feed fetch...',
+        uniqueMap.size
+      );
+
+      try {
+        for (let i = 0; i < tasks.length; i++) {
+          if (controller.signal.aborted || requestToken !== state.switchToken) return;
+          const task = tasks[i];
+          if (skipSort && task.sortBy === skipSort) {
+            updateProgressUI(i + 1, tasks.length, `Caught up on ${task.sortBy}...`, uniqueMap.size);
+            continue;
+          }
+
+          updateProgressUI(
+            i,
+            tasks.length,
+            `Fetching page ${task.page} (${task.sortBy}) • +${newlyAddedCount} new...`,
+            uniqueMap.size
+          );
+
+          const url = buildAppleFeedUrl(task.page, task.sortBy);
+          try {
+            const { parsed, strategyLabel } = await fetchSingleFeedPage(url, state.corsMode, controller.signal);
+            if (controller.signal.aborted || requestToken !== state.switchToken) return;
+            lastStrategyLabel = strategyLabel;
+            pagesFetched++;
+
+            // Auto-update saved app name if it was still a placeholder like "App 123456"
+            if (parsed.detectedAppName) {
+              feedTitle = parsed.detectedAppName;
+              const match = getSavedAppById(cleanId);
+              if (match && (!match.name || match.name === `App ${cleanId}`)) {
+                match.name = parsed.detectedAppName;
+                await saveAppToDb(match);
+                renderSavedAppsBar();
+              }
+            } else if (parsed.feedTitle && !savedApp?.name) {
+              feedTitle = parsed.feedTitle;
+            }
+            if (parsed.feedUpdated) feedUpdated = parsed.feedUpdated;
+
+            if (parsed.reviews.length === 0) {
+              skipSort = task.sortBy;
+            } else {
+              let pageNewCount = 0;
+              for (const r of parsed.reviews) {
+                if (uniqueMap.has(r.id)) {
+                  duplicatesSkipped++;
+                } else {
+                  uniqueMap.set(r.id, r);
+                  pageNewCount++;
+                  newlyAddedCount++;
+                }
+              }
+
+              applyLoadedFeed(
+                { reviews: Array.from(uniqueMap.values()), feedTitle, feedUpdated },
+                `${lastStrategyLabel} (+${newlyAddedCount} new)`,
+                { pagesFetched, duplicatesSkipped, preserveFilters: i > 0 }
+              );
+
+              // Delta stop: when sorting by mostRecent and we already have cached reviews,
+              // hitting a page with 0 unseen reviews means all older pages are already stored locally.
+              if (isIncrementalSync && task.sortBy === 'mostRecent' && pageNewCount === 0) {
+                skipSort = task.sortBy;
+              }
+            }
+
+            updateProgressUI(
+              i + 1,
+              tasks.length,
+              `Checked page ${task.page} (${task.sortBy}) • +${newlyAddedCount} new`,
+              uniqueMap.size
+            );
+
+            if (i < tasks.length - 1 && skipSort !== task.sortBy) {
+              await new Promise((resolve) => setTimeout(resolve, 150));
+            }
+          } catch (pageErr) {
+            if (pageErr.name === 'AbortError' || controller.signal.aborted || requestToken !== state.switchToken) throw pageErr;
+            // Apple returns HTTP 400 once page depth exceeds available pages
+            if (pagesFetched > 0 && String(pageErr.message).includes('400')) {
+              skipSort = task.sortBy;
+              continue;
+            }
+            encounteredError = pageErr;
+            if (pagesFetched === 0) break;
+          }
+        }
+
+        if (controller.signal.aborted || requestToken !== state.switchToken) return;
+
+        if (uniqueMap.size > 0) {
+          const mergedList = Array.from(uniqueMap.values());
+          await saveReviewsToDb(cleanId, state.country, mergedList, { feedTitle, feedUpdated });
+          if (controller.signal.aborted || requestToken !== state.switchToken) return;
+
+          updateCacheStatusBadge(mergedList.length, new Date().toISOString());
+
+          const badgeText =
+            newlyAddedCount > 0
+              ? `${lastStrategyLabel} (+${newlyAddedCount} new)`
+              : `IndexedDB Synced (0 new)`;
+
+          applyLoadedFeed(
+            { reviews: mergedList, feedTitle, feedUpdated },
+            badgeText,
+            { pagesFetched, duplicatesSkipped, preserveFilters: false }
+          );
+
+          if (newlyAddedCount > 0) {
+            showToast(
+              `Saved ${newlyAddedCount} new review(s) to IndexedDB (${mergedList.length} total).`,
+              'success'
+            );
+          } else {
+            showToast(`Up to date! No new reviews since last sync (${mergedList.length} in IndexedDB).`, 'info');
+          }
+        } else if (encounteredError) {
+          throw encounteredError;
+        } else {
+          applyLoadedFeed(
+            { reviews: [], feedTitle, feedUpdated },
+            `${lastStrategyLabel} (0 reviews)`,
+            { pagesFetched, duplicatesSkipped }
+          );
+          showStatusBanner(
+            'info',
+            'No customer reviews returned for this storefront',
+            `Apple returned 0 reviews for App ID ${state.appId} in storefront "${state.country.toUpperCase()}". Try switching the Storefront dropdown or verify the App ID.`
+          );
+        }
+      } catch (err) {
+        if (err.name === 'AbortError' || controller.signal.aborted || requestToken !== state.switchToken) {
+          if (err.name === 'AbortError' && requestToken === state.switchToken) {
+            const partialList = Array.from(uniqueMap.values());
+            if (partialList.length > 0) {
+              await saveReviewsToDb(cleanId, state.country, partialList, { feedTitle, feedUpdated });
+              updateCacheStatusBadge(partialList.length, new Date().toISOString());
+            }
+            showToast(`Stopped fetch. Saved ${partialList.length} reviews to IndexedDB.`, 'info');
+          }
+        } else if (cached.reviews.length > 0) {
+          applyLoadedFeed(
+            { reviews: cached.reviews, feedTitle, feedUpdated },
+            `IndexedDB Offline Cache`,
+            { pagesFetched: 0, duplicatesSkipped: 0 }
+          );
+          showToast(`Offline/CORS blocked — loaded ${cached.reviews.length} cached reviews from IndexedDB.`, 'info');
+        } else {
+          showStatusBanner(
+            'warning',
+            'Could not reach Apple iTunes RSS feed directly',
+            `${err.message}. Browser CORS or sandbox policies may block external requests—you can paste the raw JSON/XML directly or load the demo dataset.`
+          );
+        }
+      } finally {
+        if (state.activeAbortController === controller) {
+          state.activeAbortController = null;
+          setFetchLoading(false);
+        }
+      }
+    }
+
+    // =========================================================================
+    // 10. State Application, Filtering, Analytics & Weekly Trend Chart
+    // =========================================================================
+    function applyLoadedFeed(parsed, sourceLabel, meta = {}) {
+      state.reviews = Array.isArray(parsed.reviews) ? parsed.reviews : [];
+      if (parsed.feedTitle !== undefined) state.feedTitle = parsed.feedTitle;
+      if (parsed.feedUpdated !== undefined) state.feedUpdated = parsed.feedUpdated;
+      state.sourceLabel = sourceLabel || 'Loaded';
+      if (typeof meta.pagesFetched === 'number') state.pagesFetched = meta.pagesFetched;
+      if (typeof meta.duplicatesSkipped === 'number') state.duplicatesSkipped = meta.duplicatesSkipped;
+
+      if (!meta.preserveFilters) {
+        state.filters.search = '';
+        state.filters.star = 'all';
+        state.filters.version = 'all';
+        state.visibleLimit = 50;
+        els.inputSearch.value = '';
+        els.btnClearSearch.classList.add('hidden');
+        syncStarPillsUI();
+      }
+
+      populateVersionDropdown();
+      renderDashboard();
+    }
+
+    function populateVersionDropdown() {
+      const counts = new Map();
+      for (const r of state.reviews) {
+        const ver = r.version || '—';
+        counts.set(ver, (counts.get(ver) || 0) + 1);
+      }
+
+      const sortedVersions = Array.from(counts.keys()).sort((a, b) =>
+        b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' })
+      );
+
+      const previousValue = state.filters.version;
+      els.selectVersion.innerHTML = `<option value="all">All Versions (${state.reviews.length})</option>`;
+      for (const ver of sortedVersions) {
+        const opt = document.createElement('option');
+        opt.value = ver;
+        opt.textContent = `v${ver} (${counts.get(ver)})`;
+        els.selectVersion.appendChild(opt);
+      }
+
+      if (previousValue !== 'all' && counts.has(previousValue)) {
+        els.selectVersion.value = previousValue;
+      } else {
+        state.filters.version = 'all';
+        els.selectVersion.value = 'all';
+      }
+    }
+
+    function getFilteredReviews() {
+      const q = state.filters.search.trim().toLowerCase();
+      const starFilter = state.filters.star;
+      const versionFilter = state.filters.version;
+      const sortMode = state.filters.clientSort;
+
+      const filtered = state.reviews.filter((r) => {
+        if (starFilter !== 'all' && String(r.rating) !== String(starFilter)) {
+          return false;
+        }
+        if (versionFilter !== 'all' && (r.version || '—') !== versionFilter) {
+          return false;
+        }
+        if (q) {
+          const haystack = `${r.title} ${r.content} ${r.author} ${r.version}`.toLowerCase();
+          if (!haystack.includes(q)) return false;
+        }
+        return true;
+      });
+
+      filtered.sort((a, b) => {
+        if (sortMode === 'oldest') {
+          return new Date(a.updated || 0) - new Date(b.updated || 0);
+        }
+        if (sortMode === 'highest') {
+          return b.rating - a.rating || new Date(b.updated || 0) - new Date(a.updated || 0);
+        }
+        if (sortMode === 'lowest') {
+          return a.rating - b.rating || new Date(b.updated || 0) - new Date(a.updated || 0);
+        }
+        return new Date(b.updated || 0) - new Date(a.updated || 0);
+      });
+
+      return filtered;
+    }
+
+    function syncStarPillsUI() {
+      els.starPills.forEach((pill) => {
+        const isActive = pill.dataset.star === String(state.filters.star);
+        if (isActive) {
+          pill.className = 'star-pill active px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-600 text-white transition cursor-pointer';
+        } else {
+          pill.className = 'star-pill px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 transition cursor-pointer';
+        }
+      });
+
+      const hasFilter =
+        state.filters.search.trim() !== '' ||
+        state.filters.star !== 'all' ||
+        state.filters.version !== 'all';
+      els.btnResetFilters.classList.toggle('hidden', !hasFilter);
+    }
+
+    function renderStarsHtml(rating, sizeClass = 'w-4 h-4') {
+      const rounded = Math.round(rating);
+      let html = '';
+      for (let i = 1; i <= 5; i++) {
+        const filled = i <= rounded;
+        html += `<svg class="${sizeClass} ${filled ? 'text-amber-400' : 'text-slate-200'}" fill="currentColor" viewBox="0 0 20 20">
+          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+        </svg>`;
+      }
+      return html;
+    }
+
+    function formatReviewDate(isoStr) {
+      if (!isoStr) return '—';
+      const d = new Date(isoStr);
+      if (Number.isNaN(d.getTime())) return isoStr;
+      return d.toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit'
+      });
+    }
+
+    function renderDashboard() {
+      const allReviews = state.reviews;
+      const filteredReviews = getFilteredReviews();
+      const total = allReviews.length;
+
+      // KPI 1: Counts & Meta
+      els.dataSourceBadge.textContent = state.sourceLabel;
+      els.statTotalCount.textContent = String(total);
+      els.statFilteredNote.textContent =
+        filteredReviews.length !== total
+          ? `(${filteredReviews.length} shown)`
+          : total === 1
+            ? 'entry'
+            : 'entries';
+      els.statPaginationMeta.textContent = `${state.pagesFetched} pages fetched • ${state.duplicatesSkipped} duplicates skipped`;
+      els.statAppTitle.textContent = state.feedTitle || (state.appId ? `App ${state.appId}` : 'No App Selected');
+      els.statFeedUpdated.textContent = state.feedUpdated ? formatReviewDate(state.feedUpdated) : '—';
+
+      // KPI 2: Average Rating & Sentiment
+      const sum = allReviews.reduce((acc, r) => acc + (r.rating || 0), 0);
+      const avg = total > 0 ? sum / total : 0;
+      const positiveCount = allReviews.filter((r) => r.rating >= 4).length;
+      const positivePct = total > 0 ? Math.round((positiveCount / total) * 100) : 0;
+
+      els.statAvgRating.textContent = avg.toFixed(2);
+      els.statAvgStars.innerHTML = renderStarsHtml(avg, 'w-4 h-4');
+      els.statPositiveShare.textContent = `${positivePct}% ≥ 4★`;
+
+      // KPI 3: 5★ to 1★ Distribution Bars
+      const countsByStar = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+      for (const r of allReviews) {
+        if (countsByStar[r.rating] !== undefined) countsByStar[r.rating]++;
+      }
+
+      els.ratingBarsContainer.innerHTML = [5, 4, 3, 2, 1]
+        .map((star) => {
+          const count = countsByStar[star];
+          const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+          const isSelected = String(state.filters.star) === String(star);
+          return `
+            <button
+              type="button"
+              data-bar-star="${star}"
+              class="rating-bar-btn w-full flex items-center gap-2.5 text-xs group cursor-pointer rounded-lg px-1.5 py-0.5 ${isSelected ? 'bg-brand-50 ring-1 ring-brand-300' : 'hover:bg-slate-50'}"
+            >
+              <span class="w-7 text-right font-semibold text-slate-700 shrink-0">${star}★</span>
+              <div class="flex-1 h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                <div class="h-full rounded-full transition-all duration-300 ${star >= 4 ? 'bg-emerald-500' : star === 3 ? 'bg-amber-400' : 'bg-rose-500'}" style="width: ${pct}%"></div>
+              </div>
+              <span class="w-16 text-right font-mono text-[11px] text-slate-500 shrink-0">${count} (${pct}%)</span>
+            </button>
+          `;
+        })
+        .join('');
+
+      els.ratingBarsContainer.querySelectorAll('.rating-bar-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const clickedStar = btn.dataset.barStar;
+          state.filters.star = String(state.filters.star) === clickedStar ? 'all' : clickedStar;
+          state.visibleLimit = 50;
+          syncStarPillsUI();
+          renderDashboard();
+        });
+      });
+
+      // Weekly Rating Chart
+      renderWeeklyRatingChart(filteredReviews);
+
+      // Render Review Cards
+      renderReviewCards(filteredReviews);
+    }
+
+    function getIsoWeekInfo(dateObj) {
+      const d = new Date(Date.UTC(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate()));
+      const dayNum = d.getUTCDay() || 7;
+      d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+      const isoYear = d.getUTCFullYear();
+      const yearStart = new Date(Date.UTC(isoYear, 0, 1));
+      const weekNo = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
+
+      const monday = new Date(d);
+      monday.setUTCDate(d.getUTCDate() - 3);
+      const sunday = new Date(monday);
+      sunday.setUTCDate(monday.getUTCDate() + 6);
+
+      const startLabel = monday.toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        timeZone: 'UTC'
+      });
+      const endLabel = sunday.toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        timeZone: 'UTC'
+      });
+
+      return {
+        key: `${isoYear}-W${String(weekNo).padStart(2, '0')}`,
+        shortWeek: `W${String(weekNo).padStart(2, '0')}`,
+        axisDate: startLabel,
+        rangeLabel: `${startLabel} – ${endLabel}`
+      };
+    }
+
+    function renderWeeklyRatingChart(reviews) {
+      const buckets = new Map();
+      for (const r of reviews) {
+        if (!r.updated) continue;
+        const dt = new Date(r.updated);
+        if (Number.isNaN(dt.getTime())) continue;
+        const info = getIsoWeekInfo(dt);
+        if (!buckets.has(info.key)) {
+          buckets.set(info.key, { ...info, sum: 0, count: 0 });
+        }
+        const entry = buckets.get(info.key);
+        entry.sum += r.rating || 0;
+        entry.count += 1;
+      }
+
+      const weeks = Array.from(buckets.values())
+        .sort((a, b) => a.key.localeCompare(b.key))
+        .map((w) => ({
+          ...w,
+          avg: w.count > 0 ? w.sum / w.count : 0
+        }));
+
+      els.weeklyChartSpan.textContent = `${weeks.length} ${weeks.length === 1 ? 'week' : 'weeks'}`;
+
+      if (weeks.length === 0) {
+        els.weeklyChartContainer.innerHTML = `
+          <div class="h-44 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 flex items-center justify-center text-xs text-slate-400">
+            No dated reviews available to plot weekly rating averages.
+          </div>
+        `;
+        return;
+      }
+
+      const width = 920;
+      const height = 240;
+      const padLeft = 42;
+      const padRight = 24;
+      const padTop = 20;
+      const padBottom = 46;
+      const plotW = width - padLeft - padRight;
+      const plotH = height - padTop - padBottom;
+      const maxVol = Math.max(...weeks.map((w) => w.count), 1);
+
+      const xForIndex = (idx) => {
+        if (weeks.length === 1) return padLeft + plotW / 2;
+        return padLeft + (idx / (weeks.length - 1)) * plotW;
+      };
+      const yForRating = (val) => padTop + ((5 - val) / 4) * plotH;
+
+      const gridLines = [1, 2, 3, 4, 5]
+        .map((star) => {
+          const y = yForRating(star);
+          return `
+            <line x1="${padLeft}" y1="${y}" x2="${width - padRight}" y2="${y}" stroke="#e2e8f0" stroke-dasharray="3 3" />
+            <text x="${padLeft - 8}" y="${y + 4}" text-anchor="end" font-size="11" fill="#64748b" font-family="JetBrains Mono, monospace">${star}★</text>
+          `;
+        })
+        .join('');
+
+      const barWidth = Math.max(6, Math.min(28, (plotW / Math.max(weeks.length, 1)) * 0.55));
+      const volumeBars = weeks
+        .map((w, idx) => {
+          const cx = xForIndex(idx);
+          const barH = (w.count / maxVol) * (plotH * 0.55);
+          const y = padTop + plotH - barH;
+          return `<rect x="${cx - barWidth / 2}" y="${y}" width="${barWidth}" height="${barH}" rx="3" fill="#d8f0f3" opacity="0.85" />`;
+        })
+        .join('');
+
+      const points = weeks.map((w, idx) => `${xForIndex(idx).toFixed(1)},${yForRating(w.avg).toFixed(1)}`);
+      const polyline =
+        weeks.length > 1
+          ? `<polyline fill="none" stroke="#007380" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" points="${points.join(' ')}" />`
+          : '';
+
+      const labelStep = Math.max(1, Math.ceil(weeks.length / 8));
+      const nodesAndLabels = weeks
+        .map((w, idx) => {
+          const cx = xForIndex(idx);
+          const cy = yForRating(w.avg);
+          const dotColor = w.avg >= 4 ? '#10b981' : w.avg >= 3 ? '#f59e0b' : '#f43f5e';
+          const showLabel = idx % labelStep === 0 || idx === weeks.length - 1;
+
+          const xLabel = showLabel
+            ? `
+              <text x="${cx}" y="${padTop + plotH + 18}" text-anchor="middle" font-size="10" fill="#475569" font-family="Inter, sans-serif">${escapeHtml(w.axisDate)}</text>
+              <text x="${cx}" y="${padTop + plotH + 32}" text-anchor="middle" font-size="9.5" fill="#94a3b8" font-family="JetBrains Mono, monospace">${escapeHtml(w.shortWeek)}</text>
+            `
+            : '';
+
+          return `
+            ${xLabel}
+            <circle cx="${cx}" cy="${cy}" r="5" fill="${dotColor}" stroke="#ffffff" stroke-width="2" class="cursor-pointer">
+              <title>${escapeHtml(w.key)} (${escapeHtml(w.rangeLabel)}): Avg ${w.avg.toFixed(2)}★ (${w.count} ${w.count === 1 ? 'review' : 'reviews'})</title>
+            </circle>
+          `;
+        })
+        .join('');
+
+      els.weeklyChartContainer.innerHTML = `
+        <div class="w-full overflow-x-auto">
+          <svg viewBox="0 0 ${width} ${height}" class="w-full min-w-[560px] h-auto select-none" role="img" aria-label="Weekly Rating Average Over Time">
+            ${gridLines}
+            ${volumeBars}
+            ${polyline}
+            ${nodesAndLabels}
+          </svg>
+        </div>
+      `;
+    }
+
+    function renderReviewCards(filteredReviews) {
+      if (!state.appId && state.reviews.length === 0) {
+        els.loadMoreBar.classList.add('hidden');
+        els.reviewsContainer.innerHTML = `
+          <div class="bg-white rounded-2xl border border-slate-200 p-10 text-center space-y-4">
+            <div class="w-12 h-12 rounded-2xl bg-brand-50 text-brand-600 mx-auto flex items-center justify-center">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+              </svg>
+            </div>
+            <div class="space-y-1 max-w-md mx-auto">
+              <p class="text-base font-bold text-slate-900">Add your first App Store app</p>
+              <p class="text-xs sm:text-sm text-slate-500 leading-relaxed">
+                Save any Apple App ID (or paste an App Store URL) to pull customer reviews, cache them locally in IndexedDB, and incrementally sync only new reviews on future refreshes.
+              </p>
+            </div>
+            <div class="flex flex-wrap items-center justify-center gap-2 pt-1">
+              <button
+                id="btn-empty-add-app"
+                type="button"
+                class="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs sm:text-sm font-semibold shadow-sm transition cursor-pointer"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                <span>Add App by ID</span>
+              </button>
+            </div>
+          </div>
+        `;
+        const emptyAddBtn = document.getElementById('btn-empty-add-app');
+        if (emptyAddBtn) {
+          emptyAddBtn.addEventListener('click', () => openAppModal(null));
+        }
+        return;
+      }
+
+      if (filteredReviews.length === 0) {
+        els.loadMoreBar.classList.add('hidden');
+        els.reviewsContainer.innerHTML = `
+          <div class="bg-white rounded-2xl border border-slate-200 p-10 text-center space-y-2">
+            <p class="text-sm font-semibold text-slate-800">No reviews match the current view</p>
+            <p class="text-xs text-slate-500">
+              ${state.reviews.length === 0
+                ? 'Click "Fetch All Pages" to load reviews from Apple iTunes, or paste raw JSON/XML if external requests are blocked.'
+                : 'Try clearing your search term, version filter, or star rating selection.'}
+            </p>
+          </div>
+        `;
+        return;
+      }
+
+      const visibleSlice = filteredReviews.slice(0, state.visibleLimit);
+      els.reviewsContainer.innerHTML = visibleSlice
+        .map((r) => {
+          const badgeBorder =
+            r.rating >= 4
+              ? 'border-l-emerald-500'
+              : r.rating === 3
+                ? 'border-l-amber-400'
+                : 'border-l-rose-500';
+          return `
+            <article class="bg-white rounded-2xl border border-slate-200 border-l-4 ${badgeBorder} p-4 sm:p-5 shadow-2xs space-y-2.5">
+              <div class="flex flex-wrap items-start justify-between gap-2">
+                <div class="space-y-1">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <div class="flex items-center gap-0.5">${renderStarsHtml(r.rating, 'w-4 h-4')}</div>
+                    <h3 class="text-sm sm:text-base font-bold text-slate-900">${escapeHtml(r.title)}</h3>
+                  </div>
+                  <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                    <span class="font-medium text-slate-700">${escapeHtml(r.author)}</span>
+                    <span>•</span>
+                    <span>${escapeHtml(formatReviewDate(r.updated))}</span>
+                    <span>•</span>
+                    <span class="font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[11px]">v${escapeHtml(r.version)}</span>
+                  </div>
+                </div>
+                ${
+                  r.voteCount > 0
+                    ? `<span class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">${r.voteSum}/${r.voteCount} helpful</span>`
+                    : ''
+                }
+              </div>
+              <p class="text-xs sm:text-sm text-slate-700 leading-relaxed whitespace-pre-line">${escapeHtml(r.content)}</p>
+            </article>
+          `;
+        })
+        .join('');
+
+      if (filteredReviews.length > state.visibleLimit) {
+        els.loadMoreBar.classList.remove('hidden');
+        els.loadMoreStatus.textContent = `Showing ${visibleSlice.length} of ${filteredReviews.length} matching reviews`;
+      } else {
+        els.loadMoreBar.classList.add('hidden');
+      }
+    }
+
+    // =========================================================================
+    // 11. Exports (Markdown, Excel-Ready CSV, JSON) & Clipboard Helper
+    // =========================================================================
+    function copyTextToClipboard(text, successMsg) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+        showToast(successMsg, 'success');
+      } catch (_) {
+        showToast('Unable to copy automatically — please copy manually.', 'error');
+      }
+      document.body.removeChild(ta);
+    }
+
+    function downloadBlobFile(content, filename, mimeType) {
+      const blob = new Blob([content], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function exportMarkdown() {
+      const rows = getFilteredReviews();
+      if (rows.length === 0) {
+        showToast('No reviews to export.', 'error');
+        return;
+      }
+      const lines = [
+        `# App Store Reviews — ${state.feedTitle || state.appId} (${state.appId || 'N/A'}, ${state.country.toUpperCase()})`,
+        '',
+        ...rows.map(
+          (r) =>
+            `- **${r.rating}★** | **${r.title}** — *${r.author}* (v${r.version}, ${formatReviewDate(r.updated)})\n  ${r.content.replace(/\n+/g, ' ')}`
+        )
+      ];
+      copyTextToClipboard(lines.join('\n'), `Copied ${rows.length} reviews as Markdown!`);
+    }
+
+    function sanitizeExcelCell(value) {
+      let str = String(value ?? '').replace(/\r?\n+/g, ' ').trim();
+      if (/^[=+\-@]/.test(str)) {
+        str = `'${str}`;
+      }
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+
+    function exportCsv() {
+      const rows = getFilteredReviews();
+      if (rows.length === 0) {
+        showToast('No reviews to export.', 'error');
+        return;
+      }
+      const headers = ['Review ID', 'Date', 'Rating', 'Version', 'Author', 'Title', 'Review Text', 'Helpful Votes'];
+      const csvLines = [
+        'sep=;',
+        headers.map(sanitizeExcelCell).join(';'),
+        ...rows.map((r) => {
+          const dt = r.updated ? new Date(r.updated) : null;
+          const formattedDate =
+            dt && !Number.isNaN(dt.getTime())
+              ? `${dt.toISOString().slice(0, 10)} ${dt.toTimeString().slice(0, 5)}`
+              : r.updated || '';
+          return [
+            r.id,
+            formattedDate,
+            r.rating,
+            r.version,
+            r.author,
+            r.title,
+            r.content,
+            r.voteCount
+          ]
+            .map(sanitizeExcelCell)
+            .join(';');
+        })
+      ];
+
+      const bomCsv = '\uFEFF' + csvLines.join('\r\n');
+      const filename = `appstore-reviews-${state.appId || 'export'}-${state.country}-${new Date().toISOString().slice(0, 10)}.csv`;
+      downloadBlobFile(bomCsv, filename, 'text/csv;charset=utf-8;');
+      showToast(`Exported ${rows.length} reviews to Excel CSV (${filename}).`, 'success');
+    }
+
+    function exportJson() {
+      const rows = getFilteredReviews();
+      if (rows.length === 0) {
+        showToast('No reviews to export.', 'error');
+        return;
+      }
+      const payload = {
+        appId: state.appId,
+        appTitle: state.feedTitle,
+        storefront: state.country,
+        exportedAt: new Date().toISOString(),
+        totalExported: rows.length,
+        reviews: rows
+      };
+      const filename = `appstore-reviews-${state.appId || 'export'}-${state.country}-${new Date().toISOString().slice(0, 10)}.json`;
+      downloadBlobFile(JSON.stringify(payload, null, 2), filename, 'application/json;charset=utf-8;');
+      showToast(`Exported ${rows.length} reviews to JSON (${filename}).`, 'success');
+    }
+
+    // =========================================================================
+    // 12. Dynamic Dart / Flutter Snippet Generator
+    // =========================================================================
+    function updateDartSnippet() {
+      if (!els.dartContent) return;
+      const appId = parseAppInput(els.inputAppId.value || state.appId).appId || 'YOUR_APP_ID';
+      const country = (els.selectCountry.value || state.country || 'us').trim();
+      const sortBy = els.selectSort.value || 'mostRecent';
+
+      els.dartContent.textContent = `import 'dart:convert';
+import 'dart:io';
+
+Future<List<Map<String, dynamic>>> fetchAllStoreReviews({
+  String appId = '${appId}',
+  String country = '${country}',
+  String sortBy = '${sortBy}',
+}) async {
+  final client = HttpClient();
+  final Map<String, Map<String, dynamic>> uniqueById = {};
+
+  try {
+    for (int page = 1; page <= 10; page++) {
+      final uri = Uri.parse(
+        'https://itunes.apple.com/\$country/rss/customerreviews/page=\$page/id=\$appId/sortBy=\$sortBy/json',
+      );
+      final req = await client.getUrl(uri);
+      final res = await req.close();
+      if (res.statusCode != 200) break;
+
+      final body = await res.transform(utf8.decoder).join();
+      final decoded = jsonDecode(body) as Map<String, dynamic>;
+      final entries = (decoded['feed']?['entry'] as List<dynamic>?) ?? [];
+
+      int pageReviewCount = 0;
+      for (final entry in entries) {
+        if (entry['im:rating'] == null) continue;
+        pageReviewCount++;
+        final id = entry['id']['label'].toString();
+        uniqueById[id] = {
+          'id': id,
+          'author': entry['author']['name']['label'],
+          'rating': int.tryParse(entry['im:rating']['label'].toString()) ?? 0,
+          'version': entry['im:version']['label'],
+          'title': entry['title']['label'],
+          'content': entry['content']['label'],
+          'updated': entry['updated']['label'],
+        };
+      }
+      if (pageReviewCount == 0) break;
+      await Future.delayed(const Duration(milliseconds: 150));
+    }
+  } finally {
+    client.close();
+  }
+  return uniqueById.values.toList();
+}`;
+    }
+
+    // =========================================================================
+    // 13. IndexedDB Hydration & App Switcher Orchestration
+    // =========================================================================
+    async function hydrateFromIndexedDbAndSync() {
+      if (state.activeAbortController) {
+        state.activeAbortController.abort();
+        state.activeAbortController = null;
+      }
+      const token = ++state.switchToken;
+
+      const parsedInput = parseAppInput(els.inputAppId.value || state.appId);
+      const cleanId = parsedInput.appId;
+
+      if (!cleanId) {
+        state.appId = '';
+        state.feedTitle = '';
+        state.feedUpdated = '';
+        state.reviews = [];
+        syncAppInputBadge();
+        updateEndpointDisplay();
+        hideStatusBanner();
+        updateCacheStatusBadge(0);
+        applyLoadedFeed(
+          { reviews: [], feedTitle: '', feedUpdated: '' },
+          'Ready',
+          { pagesFetched: 0, duplicatesSkipped: 0 }
+        );
+        return;
+      }
+
+      els.inputAppId.value = cleanId;
+      if (parsedInput.country && els.selectCountry.querySelector(`option[value="${parsedInput.country}"]`)) {
+        els.selectCountry.value = parsedInput.country;
+      }
+
+      state.appId = cleanId;
+      state.country = els.selectCountry.value;
+      renderSavedAppsBar();
+      updateEndpointDisplay();
+      hideStatusBanner();
+
+      const savedApp = getSavedAppById(cleanId);
+      const fallbackTitle = savedApp?.name || `App ${cleanId}`;
+
+      applyLoadedFeed(
+        {
+          reviews: [],
+          feedTitle: fallbackTitle,
+          feedUpdated: ''
+        },
+        'Loading...',
+        { pagesFetched: 0, duplicatesSkipped: 0 }
+      );
+      if (els.statCacheStatus) {
+        els.statCacheStatus.textContent = 'IndexedDB: Checking...';
+      }
+
+      const cached = await loadCachedReviewsFromDb(cleanId, state.country);
+      if (token !== state.switchToken) return;
+
+      if (cached.reviews.length > 0) {
+        applyLoadedFeed(
+          {
+            reviews: cached.reviews,
+            feedTitle: savedApp?.name || cached.meta?.feedTitle || fallbackTitle,
+            feedUpdated: cached.meta?.feedUpdated || ''
+          },
+          `IndexedDB Cache (${cached.reviews.length})`,
+          { pagesFetched: 0, duplicatesSkipped: 0 }
+        );
+        updateCacheStatusBadge(cached.reviews.length, cached.meta?.lastSyncedAt || '');
+      } else {
+        updateCacheStatusBadge(0);
+      }
+
+      fetchReviewsFromApi();
+    }
+
+    // =========================================================================
+    // 14. Event Listeners & Initial Bootstrap
+    // =========================================================================
+    function bindEventListeners() {
+      // Open Add App Modal
+      els.btnOpenAddApp.addEventListener('click', () => openAppModal(null));
+
+      // Quick Save Current App ID
+      els.btnQuickSaveApp.addEventListener('click', () => {
+        const parsed = parseAppInput(els.inputAppId.value);
+        if (!parsed.appId) return;
+        openAppModal(null, parsed.appId, parsed.country || els.selectCountry.value);
+      });
+
+      // App Modal close / cancel
+      els.btnCloseAppModal.addEventListener('click', closeAppModal);
+      els.btnCancelAppModal.addEventListener('click', closeAppModal);
+      els.appModal.addEventListener('click', (e) => {
+        if (e.target === els.appModal) closeAppModal();
+      });
+
+      // Live URL/ID extraction hint inside Add App Modal
+      els.modalAppId.addEventListener('input', () => {
+        if (state.editingAppId) return;
+        const parsed = parseAppInput(els.modalAppId.value);
+        if (parsed.appId) {
+          const countryNote = parsed.country ? ` • Storefront: ${parsed.country.toUpperCase()}` : '';
+          els.modalAppIdHint.textContent = `Detected App ID: ${parsed.appId}${countryNote}`;
+          if (parsed.country && els.modalAppCountry.querySelector(`option[value="${parsed.country}"]`)) {
+            els.modalAppCountry.value = parsed.country;
+          }
+        } else {
+          els.modalAppIdHint.textContent = 'Find the numeric ID after "id" in any Apple App Store URL.';
+        }
+      });
+
+      // Save / Update App in IndexedDB
+      els.appModalForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const isEditing = Boolean(state.editingAppId);
+        const parsed = isEditing
+          ? { appId: state.editingAppId, country: '' }
+          : parseAppInput(els.modalAppId.value);
+
+        if (!parsed.appId) {
+          showToast('Please enter a valid numeric Apple App ID or App Store URL.', 'error');
+          return;
+        }
+
+        const defaultCountry = els.modalAppCountry.value || 'us';
+        let displayName = els.modalAppName.value.trim();
+
+        els.btnSubmitAppModal.disabled = true;
+        els.btnSubmitAppModal.textContent = displayName ? 'Saving...' : 'Looking up app...';
+
+        if (!displayName) {
+          const lookedUp = await lookupAppNameFromItunes(parsed.appId, defaultCountry);
+          displayName = lookedUp || `App ${parsed.appId}`;
+        }
+
+        const existing = getSavedAppById(parsed.appId);
+        const record = {
+          appId: parsed.appId,
+          name: displayName,
+          defaultCountry,
+          addedAt: existing?.addedAt || new Date().toISOString(),
+          lastOpenedAt: new Date().toISOString()
+        };
+
+        await saveAppToDb(record);
+        state.savedApps = await loadSavedAppsFromDb();
+
+        els.btnSubmitAppModal.disabled = false;
+        closeAppModal();
+        showToast(
+          isEditing ? `Updated "${record.name}" in IndexedDB.` : `Saved "${record.name}" (${record.appId}) to IndexedDB.`,
+          'success'
+        );
+
+        await selectSavedApp(record);
+      });
+
+      // Delete Saved App
+      els.btnDeleteSavedApp.addEventListener('click', async () => {
+        const targetId = state.editingAppId;
+        if (!targetId) return;
+        const app = getSavedAppById(targetId);
+        const alsoDeleteCache = els.modalDeleteCacheCheckbox.checked;
+
+        await deleteSavedAppFromDb(targetId, alsoDeleteCache);
+        state.savedApps = await loadSavedAppsFromDb();
+        closeAppModal();
+        showToast(
+          `Removed "${app?.name || targetId}"${alsoDeleteCache ? ' and cleared its cached reviews' : ''}.`,
+          'info'
+        );
+
+        if (state.appId === targetId) {
+          if (state.savedApps.length > 0) {
+            await selectSavedApp(state.savedApps[0]);
+          } else {
+            els.inputAppId.value = '';
+            state.appId = '';
+            try {
+              localStorage.removeItem(LAST_APP_STORAGE_KEY);
+            } catch (_) {}
+            renderSavedAppsBar();
+            hydrateFromIndexedDbAndSync();
+          }
+        } else {
+          renderSavedAppsBar();
+        }
+      });
+
+      // Manual App ID changes
+      els.inputAppId.addEventListener('input', () => {
+        syncAppInputBadge();
+        updateEndpointDisplay();
+      });
+      els.inputAppId.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          hydrateFromIndexedDbAndSync();
+        }
+      });
+
+      // Storefront & Scope Controls
+      els.selectCountry.addEventListener('change', () => {
+        if (state.appId) {
+          hydrateFromIndexedDbAndSync();
+        } else {
+          state.country = els.selectCountry.value;
+          updateEndpointDisplay();
+        }
+      });
+      els.selectFetchScope.addEventListener('change', syncScopeControls);
+      els.selectSort.addEventListener('change', updateEndpointDisplay);
+      els.selectPage.addEventListener('change', syncScopeControls);
+
+      // Fetch & Cancel Actions
+      els.btnFetch.addEventListener('click', fetchReviewsFromApi);
+      els.btnCancelFetch.addEventListener('click', () => {
+        if (state.activeAbortController) {
+          state.activeAbortController.abort();
+        }
+      });
+
+      // Full Re-sync (Clear IndexedDB partition and re-fetch)
+      els.btnClearCache.addEventListener('click', async () => {
+        if (!state.appId) {
+          showToast('Select or enter an App ID first.', 'info');
+          return;
+        }
+        await clearCachedPartitionFromDb(state.appId, state.country);
+        updateCacheStatusBadge(0);
+        showToast('Cleared local IndexedDB cache for this app. Starting full re-sync...', 'info');
+        hydrateFromIndexedDbAndSync();
+      });
+
+      // Copy Endpoint URL
+      els.btnCopyUrl.addEventListener('click', () => {
+        const url = buildAppleFeedUrl(state.fetchScope === 'single' ? els.selectPage.value : '1', els.selectSort.value);
+        if (!url) {
+          showToast('Enter an App ID first to copy the endpoint URL.', 'info');
+          return;
+        }
+        copyTextToClipboard(url, 'Endpoint URL copied to clipboard!');
+      });
+
+      // Banner Demo Fallback
+      els.btnBannerSample.addEventListener('click', () => {
+        hideStatusBanner();
+        applyLoadedFeed(
+          {
+            reviews: DEMO_DATASET.reviews,
+            feedTitle: DEMO_DATASET.title,
+            feedUpdated: DEMO_DATASET.updated
+          },
+          'Demo Dataset',
+          { pagesFetched: 0, duplicatesSkipped: 0 }
+        );
+        showToast('Loaded generic demo dataset.', 'info');
+      });
+
+      // Search, Version, Star Pills & Client Sorting
+      els.inputSearch.addEventListener('input', () => {
+        state.filters.search = els.inputSearch.value;
+        state.visibleLimit = 50;
+        els.btnClearSearch.classList.toggle('hidden', state.filters.search.length === 0);
+        syncStarPillsUI();
+        renderDashboard();
+      });
+
+      els.btnClearSearch.addEventListener('click', () => {
+        els.inputSearch.value = '';
+        state.filters.search = '';
+        state.visibleLimit = 50;
+        els.btnClearSearch.classList.add('hidden');
+        syncStarPillsUI();
+        renderDashboard();
+      });
+
+      els.selectClientSort.addEventListener('change', () => {
+        state.filters.clientSort = els.selectClientSort.value;
+        renderDashboard();
+      });
+
+      els.selectVersion.addEventListener('change', () => {
+        state.filters.version = els.selectVersion.value;
+        state.visibleLimit = 50;
+        syncStarPillsUI();
+        renderDashboard();
+      });
+
+      els.starPills.forEach((pill) => {
+        pill.addEventListener('click', () => {
+          state.filters.star = pill.dataset.star;
+          state.visibleLimit = 50;
+          syncStarPillsUI();
+          renderDashboard();
+        });
+      });
+
+      els.btnResetFilters.addEventListener('click', () => {
+        state.filters.search = '';
+        state.filters.star = 'all';
+        state.filters.version = 'all';
+        state.visibleLimit = 50;
+        els.inputSearch.value = '';
+        els.selectVersion.value = 'all';
+        els.btnClearSearch.classList.add('hidden');
+        syncStarPillsUI();
+        renderDashboard();
+      });
+
+      // Client-side pagination buttons
+      els.btnLoadMore.addEventListener('click', () => {
+        state.visibleLimit += 50;
+        renderDashboard();
+      });
+      els.btnShowAll.addEventListener('click', () => {
+        state.visibleLimit = Number.MAX_SAFE_INTEGER;
+        renderDashboard();
+      });
+
+      // Export Buttons
+      els.btnExportMd.addEventListener('click', exportMarkdown);
+      els.btnExportCsv.addEventListener('click', exportCsv);
+      els.btnExportJson.addEventListener('click', exportJson);
+
+      // Dart / Flutter Drawer
+      els.btnToggleDart.addEventListener('click', () => {
+        updateDartSnippet();
+        els.dartPanel.classList.toggle('hidden');
+      });
+      els.btnCloseDart.addEventListener('click', () => {
+        els.dartPanel.classList.add('hidden');
+      });
+      els.btnCopyDart.addEventListener('click', () => {
+        copyTextToClipboard(els.dartContent.textContent, 'Dart / Flutter code copied!');
+      });
+
+      // Raw JSON/XML Paste Modal
+      const openPasteModal = () => {
+        updateEndpointDisplay();
+        els.pasteModal.classList.remove('hidden');
+      };
+      const closePasteModal = () => {
+        els.pasteModal.classList.add('hidden');
+      };
+
+      els.btnOpenPasteModal.addEventListener('click', openPasteModal);
+      els.btnBannerPaste.addEventListener('click', openPasteModal);
+      els.btnClosePasteModal.addEventListener('click', closePasteModal);
+      els.btnCancelPasteModal.addEventListener('click', closePasteModal);
+      els.pasteModal.addEventListener('click', (e) => {
+        if (e.target === els.pasteModal) closePasteModal();
+      });
+
+      els.btnLoadSampleFromModal.addEventListener('click', () => {
+        els.textareaRawFeed.value = JSON.stringify(
+          {
+            feed: {
+              title: { label: DEMO_DATASET.title },
+              updated: { label: DEMO_DATASET.updated },
+              entry: DEMO_DATASET.reviews.map((r) => ({
+                id: { label: r.id },
+                author: { name: { label: r.author } },
+                'im:rating': { label: String(r.rating) },
+                'im:version': { label: r.version },
+                title: { label: r.title },
+                content: { label: r.content },
+                updated: { label: r.updated },
+                'im:voteSum': { label: String(r.voteSum) },
+                'im:voteCount': { label: String(r.voteCount) }
+              }))
+            }
+          },
+          null,
+          2
+        );
+      });
+
+      els.btnParseRawFeed.addEventListener('click', async () => {
+        try {
+          const parsed = parseRawFeedText(els.textareaRawFeed.value);
+          if (parsed.reviews.length === 0) {
+            showToast('No customer reviews found in the pasted payload.', 'error');
+            return;
+          }
+
+          const shouldAppend = els.checkboxAppendPaste.checked;
+          const mergedMap = new Map();
+          if (shouldAppend) {
+            for (const existing of state.reviews) {
+              mergedMap.set(existing.id, existing);
+            }
+          }
+          let added = 0;
+          for (const item of parsed.reviews) {
+            if (!mergedMap.has(item.id)) added++;
+            mergedMap.set(item.id, item);
+          }
+
+          const finalList = Array.from(mergedMap.values());
+          if (state.appId) {
+            await saveReviewsToDb(state.appId, state.country, finalList, {
+              feedTitle: parsed.feedTitle || state.feedTitle,
+              feedUpdated: parsed.feedUpdated || state.feedUpdated
+            });
+            updateCacheStatusBadge(finalList.length, new Date().toISOString());
+          }
+
+          applyLoadedFeed(
+            {
+              reviews: finalList,
+              feedTitle: parsed.feedTitle || state.feedTitle,
+              feedUpdated: parsed.feedUpdated || state.feedUpdated
+            },
+            'Manual Import',
+            { pagesFetched: state.pagesFetched, duplicatesSkipped: state.duplicatesSkipped }
+          );
+          closePasteModal();
+          showToast(`Imported ${added} review(s) (${finalList.length} total).`, 'success');
+        } catch (err) {
+          showToast(`Parse error: ${err.message}`, 'error');
+        }
+      });
+    }
+
+    async function bootstrap() {
+      syncScopeControls();
+      bindEventListeners();
+
+      state.savedApps = await loadSavedAppsFromDb();
+      renderSavedAppsBar();
+
+      let initialApp = null;
+      if (state.savedApps.length > 0) {
+        let lastId = '';
+        try {
+          lastId = localStorage.getItem(LAST_APP_STORAGE_KEY) || '';
+        } catch (_) {}
+        initialApp = getSavedAppById(lastId) || state.savedApps[0];
+      }
+
+      if (initialApp) {
+        await selectSavedApp(initialApp);
+      } else {
+        hydrateFromIndexedDbAndSync();
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', bootstrap);
+  </script>
+</body>
+</html>
